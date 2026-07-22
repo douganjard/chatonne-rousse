@@ -1,0 +1,41 @@
+name: Lighthouse
+
+on:
+  pull_request:
+    paths:
+      - src/**
+      - public/**
+      - index.html
+      - lighthouserc.json
+      - package.json
+      - pnpm-lock.yaml
+      - vite.config.ts
+
+concurrency:
+  group: lighthouse-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production app
+        run: pnpm run build
+
+      - name: Run Lighthouse CI
+        run: pnpm run lhci

@@ -1,0 +1,44 @@
+name: Visual Smoke
+
+on:
+  pull_request:
+    paths:
+      - src/scene/**
+      - src/styles/**
+      - src/components/**
+      - src/content/**
+      - src/data/navNodes.ts
+      - public/models/**
+      - tests/**
+      - playwright.config.ts
+      - package.json
+      - pnpm-lock.yaml
+
+concurrency:
+  group: visual-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run smoke tests
+        run: pnpm run test:visual
