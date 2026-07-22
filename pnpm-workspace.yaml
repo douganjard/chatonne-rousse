@@ -2,6 +2,7 @@ allowBuilds:
   '@firebase/util': true
   esbuild: true
   protobufjs: true
+  re2: true
 minimumReleaseAgeExclude:
   - react-dom@19.2.8
   - react@19.2.8
