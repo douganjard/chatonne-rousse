@@ -99,7 +99,7 @@ Use this checklist to finish the operations lifecycle before the first V1 commit
    - Static asset caching: configured in `firebase.json`
    - Security headers: configured in `firebase.json`
 
-5. Create a Firebase web app and copy its config values into GitHub repository variables or environment configuration as needed:
+5. Create a Firebase web app and copy its config values into GitHub repository variables. Use repository variables, not secrets, for the Firebase web app config because these values are embedded into the public browser bundle:
 
    - `VITE_FIREBASE_API_KEY`
    - `VITE_FIREBASE_AUTH_DOMAIN`
@@ -108,11 +108,9 @@ Use this checklist to finish the operations lifecycle before the first V1 commit
    - `VITE_FIREBASE_MESSAGING_SENDER_ID`
    - `VITE_FIREBASE_APP_ID`
    - `VITE_FIREBASE_MEASUREMENT_ID`
+   - `VITE_ANALYTICS_DISABLED`: set to `false` when analytics should run, or `true` as a production kill switch.
 
-6. Decide how production builds receive those `VITE_*` values:
-
-   - Recommended: GitHub repository variables for non-secret Firebase web config values.
-   - Keep `VITE_ANALYTICS_DISABLED=true` available as a kill switch.
+6. Confirm the Firebase Hosting GitHub workflows expose those variables to the Vite build. The preview and production workflows set the `VITE_*` values from the GitHub `vars` context.
 
 7. Add deploy authentication:
 
