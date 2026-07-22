@@ -2,6 +2,17 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 
+function manualChunks(id: string) {
+  if (id.includes('/node_modules/firebase/')) return 'firebase';
+  if (
+    id.includes('/node_modules/@react-three/drei/') ||
+    id.includes('/node_modules/@react-three/fiber/') ||
+    id.includes('/node_modules/three/')
+  ) {
+    return 'scene';
+  }
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
@@ -16,10 +27,7 @@ export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          firebase: ['firebase/app', 'firebase/analytics'],
-          scene: ['@react-three/drei', '@react-three/fiber', 'three'],
-        },
+        manualChunks,
       },
     },
   },
