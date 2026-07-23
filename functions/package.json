@@ -1,0 +1,21 @@
+{
+  "name": "chatonne-rousse-functions",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "pnpm run build && node --test lib/spotify.test.js"
+  },
+  "dependencies": {
+    "firebase-functions": "6.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "~5.7.3"
+  }
+}

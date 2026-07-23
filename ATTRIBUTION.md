@@ -17,3 +17,9 @@ This project includes selected `.glb` assets from
 [Kenney Nature Kit](https://kenney.nl/assets/nature-kit), both created/distributed by
 [Kenney](https://kenney.nl/) and licensed under
 [Creative Commons Zero, CC0](https://creativecommons.org/publicdomain/zero/1.0/).
+
+## Spotify logo
+
+`public/images/spotify-logo-white.svg` is the unmodified white RGB full logo from
+[Spotify's official developer design resources](https://developer.spotify.com/documentation/design).
+Spotify metadata and artwork remain the property of their respective rights holders and link back to Spotify.

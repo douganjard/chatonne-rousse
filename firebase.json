@@ -1,4 +1,13 @@
 {
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs22",
+    "predeploy": ["pnpm --dir \"$RESOURCE_DIR\" run build"]
+  },
+  "emulators": {
+    "functions": { "host": "127.0.0.1", "port": 5001 },
+    "hosting": { "host": "127.0.0.1", "port": 5000 }
+  },
   "hosting": {
     "public": "dist",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
@@ -57,6 +66,14 @@
       }
     ],
     "rewrites": [
+      {
+        "source": "/api/spotify/now-playing",
+        "function": {
+          "functionId": "spotifyNowPlaying",
+          "region": "us-central1",
+          "pinTag": true
+        }
+      },
       {
         "source": "**",
         "destination": "/index.html"

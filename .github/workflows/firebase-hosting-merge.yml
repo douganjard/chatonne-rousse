@@ -16,6 +16,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       VITE_ANALYTICS_DISABLED: ${{ vars.VITE_ANALYTICS_DISABLED || 'false' }}
       VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
       VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
@@ -44,6 +45,14 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Deploy Spotify function
+        run: pnpm exec firebase deploy --only functions:spotifyNowPlaying --project "$FIREBASE_PROJECT_ID" --non-interactive
 
       - name: Deploy live channel
         uses: FirebaseExtended/action-hosting-deploy@v0

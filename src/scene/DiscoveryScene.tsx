@@ -5,9 +5,15 @@ import * as THREE from 'three';
 import type { NavNode } from '../data/navNodes';
 import { trackEvent } from '../lib/telemetry';
 import { SceneModel, TOON_CAT_URL } from './SceneModel';
-import { CAT_START, ROOM_LIMIT, resolveBlockedMove } from './collisions';
+import { CAT_ROOM_LIMIT, CAT_START, resolveBlockedMove } from './collisions';
 import type { CameraMode } from './cameraMode';
 import type { MovementInput } from './movementInput';
+import {
+  createCatPostureState,
+  isCatStanding,
+  updateCatPosture,
+  type CatPostureState,
+} from './catPosture';
 import {
   createFabricMaterial,
   createMetalMaterial,
@@ -32,6 +38,7 @@ type KeyState = {
 type CatMotionState = {
   gaitPhase: number;
   move: number;
+  posture: CatPostureState;
   speed: number;
   turn: number;
 };
@@ -46,6 +53,10 @@ type CatLegPose = CatBonePose & {
   phase: number;
   side: -1 | 1;
   stride: number;
+};
+
+type CatPostureBonePose = CatBonePose & {
+  offset: [number, number, number];
 };
 
 type SparkleState = {
@@ -67,24 +78,46 @@ type SparkleSettings = {
 };
 
 const CAT_LEG_BONES = [
-  { name: 'leg.upper.F.L_014', phase: 0, side: -1, stride: 0.1 },
-  { name: 'leg.lower.FL_015', phase: Math.PI * 0.16, side: -1, stride: -0.075 },
-  { name: 'foot.F.L_016', phase: Math.PI * 0.34, side: -1, stride: 0.045 },
-  { name: 'leg.upper.F.R_024', phase: Math.PI, side: 1, stride: 0.1 },
-  { name: 'leg.lower.F.R_00', phase: Math.PI * 1.16, side: 1, stride: -0.075 },
-  { name: 'foot.F.R_025', phase: Math.PI * 1.34, side: 1, stride: 0.045 },
-  { name: 'leg.upper.B.L_04', phase: Math.PI, side: -1, stride: 0.085 },
-  { name: 'leg.lower.B.L_05', phase: Math.PI * 1.18, side: -1, stride: -0.07 },
-  { name: 'foot.B.L_06', phase: Math.PI * 1.36, side: -1, stride: 0.04 },
-  { name: 'leg.upper.B.R_027', phase: 0, side: 1, stride: 0.085 },
-  { name: 'leg.lower.B.R_028', phase: Math.PI * 0.18, side: 1, stride: -0.07 },
-  { name: 'foot.B.R_029', phase: Math.PI * 0.36, side: 1, stride: 0.04 },
+  { name: 'legupperFL_014', phase: 0, side: -1, stride: 0.1 },
+  { name: 'leglowerFL_015', phase: Math.PI * 0.16, side: -1, stride: -0.075 },
+  { name: 'footFL_016', phase: Math.PI * 0.34, side: -1, stride: 0.045 },
+  { name: 'legupperFR_024', phase: Math.PI, side: 1, stride: 0.1 },
+  { name: 'leglowerFR_00', phase: Math.PI * 1.16, side: 1, stride: -0.075 },
+  { name: 'footFR_025', phase: Math.PI * 1.34, side: 1, stride: 0.045 },
+  { name: 'legupperBL_04', phase: Math.PI, side: -1, stride: 0.085 },
+  { name: 'leglowerBL_05', phase: Math.PI * 1.18, side: -1, stride: -0.07 },
+  { name: 'footBL_06', phase: Math.PI * 1.36, side: -1, stride: 0.04 },
+  { name: 'legupperBR_027', phase: 0, side: 1, stride: 0.085 },
+  { name: 'leglowerBR_028', phase: Math.PI * 0.18, side: 1, stride: -0.07 },
+  { name: 'footBR_029', phase: Math.PI * 0.36, side: 1, stride: 0.04 },
 ] satisfies Array<{ name: string; phase: number; side: -1 | 1; stride: number }>;
+
+const CAT_SIT_BONE_OFFSETS = {
+  torso_02: [-0.72, 0, 0],
+  spine01_012: [0.08, 0, 0],
+  spine02_013: [0.1, 0, 0],
+  neck_017: [0.32, 0, 0],
+  thighBL_03: [0.01, 0.04, 0.04],
+  legupperBL_04: [0.71, 0, 0],
+  leglowerBL_05: [-1.32, 0, 0],
+  footBL_06: [0.57, 0, 0],
+  thighBR_026: [-0.33, -0.04, -0.04],
+  legupperBR_027: [0.25, 0, 0],
+  leglowerBR_028: [-1.45, 0, 0],
+  footBR_029: [-0.29, 0, 0],
+  legupperFL_014: [0.84, 0, 0],
+  leglowerFL_015: [0.5, 0, 0],
+  footFL_016: [-0.7, 0, 0],
+  legupperFR_024: [-0.09, 0, 0],
+  leglowerFR_00: [0.37, 0, 0],
+  footFR_025: [0.37, 0, 0],
+} satisfies Record<string, [number, number, number]>;
 
 const DESTINATION_SPARKLE_SETTINGS = {
   about: { center: [0, 0.04, 0.04], initialDelay: 1.2, plane: 'wall', radius: 0.12 },
   chess: { center: [0, 0.13, 0], initialDelay: 3.7, plane: 'floor', radius: 0.2 },
   synth: { center: [0, 0.14, 0], initialDelay: 4.8, plane: 'floor', radius: 0.18 },
+  spotify: { center: [0.06, 1.08, 0.27], initialDelay: 2.8, plane: 'wall', radius: 0.24 },
 } satisfies Record<NavNode['id'], SparkleSettings>;
 
 const OVERVIEW_TARGET = new THREE.Vector3(0, 0.45, 0);
@@ -360,30 +393,93 @@ function BuiltInShelves() {
 }
 
 function ShelfCell({ position, seed }: { position: [number, number, number]; seed: number }) {
-  const colors = ['#d0b88d', '#1f2522', '#b99468', '#f4dfbd', '#7b4a28', '#46563d'];
-  const pattern = seed % 5;
+  const colors = ['#d0b88d', '#1f2522', '#b99468', '#f4dfbd', '#7b4a28', '#46563d', '#8e6f49'];
+  const pattern = (seed * 7 + 3) % 12;
+  const offsetX = ((seed % 3) - 1) * 0.035;
+  const isQuietCell = pattern === 0 || pattern === 4 || pattern === 8;
 
   return (
     <group position={position}>
-      <ShelfBooks count={6 + (seed % 5)} position={[-0.32, 0, 0]} seed={seed} />
-      {pattern !== 1 && <BookStack colors={[colors[seed % colors.length], colors[(seed + 2) % colors.length], colors[(seed + 4) % colors.length]]} position={[0.18, 0, 0]} />}
-      {pattern === 1 && <ShelfDecor position={[0.22, 0, 0.01]} />}
-      {pattern === 3 && <SceneModel color="#496c48" position={[0.28, 0, 0]} scale={0.52} url="/models/kenney/plantSmall1.glb" />}
+      {pattern === 0 && <ShelfTray position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 1 && (
+        <ShelfBooks count={4 + (seed % 3)} lean={seed % 2 === 0} position={[-0.32 + offsetX, 0, 0]} seed={seed} />
+      )}
+      {pattern === 2 && (
+        <BookStack
+          colors={[colors[seed % colors.length], colors[(seed + 2) % colors.length], colors[(seed + 5) % colors.length]]}
+          position={[-0.02 + offsetX, 0, 0.01]}
+          seed={seed}
+        />
+      )}
+      {pattern === 3 && (
+        <>
+          <ShelfBooks count={5} position={[-0.34, 0, 0]} seed={seed} />
+          <ShelfBowl position={[0.15, 0, 0.015]} seed={seed} />
+        </>
+      )}
+      {pattern === 4 && <ShelfFoldedTextiles position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 5 && (
+        <>
+          <ShelfVase position={[-0.14 + offsetX, 0, 0.01]} seed={seed} />
+          <BookStack colors={[colors[(seed + 1) % colors.length], colors[(seed + 4) % colors.length]]} position={[0.18, 0, 0]} seed={seed} />
+        </>
+      )}
+      {pattern === 6 && (
+        <>
+          <ShelfFramedArt position={[-0.2 + offsetX, 0, 0.015]} seed={seed} />
+          {seed % 2 === 0 ? (
+            <SceneModel color="#496c48" position={[0.22, 0, 0.01]} scale={0.48} url="/models/kenney/plantSmall1.glb" />
+          ) : (
+            <BookStack colors={[colors[seed % colors.length], colors[(seed + 3) % colors.length]]} position={[0.18, 0, 0]} seed={seed} />
+          )}
+        </>
+      )}
+      {pattern === 7 && <ShelfBasket position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 8 && <ShelfBowl position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 9 && (
+        <ShelfBooks count={3 + (seed % 2)} lean position={[-0.24 + offsetX, 0, 0]} seed={seed} />
+      )}
+      {pattern === 10 && (
+        <>
+          <ShelfVase position={[-0.2 + offsetX, 0, 0.01]} seed={seed} />
+          <ShelfBowl position={[0.18, 0, 0.015]} seed={seed + 2} />
+        </>
+      )}
+      {pattern === 11 && (
+        <>
+          <BookStack colors={[colors[seed % colors.length], colors[(seed + 3) % colors.length]]} position={[-0.12, 0, 0]} seed={seed} />
+          <ShelfBooks count={3} position={[0.15, 0, 0]} seed={seed + 2} />
+        </>
+      )}
+      {!isQuietCell && seed % 11 === 0 && <ShelfTray position={[0.3, 0, 0.02]} seed={seed + 1} />}
     </group>
   );
 }
 
-function ShelfBooks({ count, position, seed }: { count: number; position: [number, number, number]; seed: number }) {
-  const colors = ['#1f2522', '#b99468', '#d0b88d', '#7b4a28', '#46563d', '#f4dfbd'];
+function ShelfBooks({
+  count,
+  lean = false,
+  position,
+  seed,
+}: {
+  count: number;
+  lean?: boolean;
+  position: [number, number, number];
+  seed: number;
+}) {
+  const colors = ['#1f2522', '#b99468', '#d0b88d', '#7b4a28', '#46563d', '#f4dfbd', '#9b5537'];
 
   return (
     <group position={position}>
       {Array.from({ length: count }, (_, index) => {
         const height = 0.22 + ((seed + index) % 5) * 0.038;
         const width = 0.04 + ((seed + index) % 3) * 0.01;
+        const depth = 0.075 + ((seed + index) % 2) * 0.025;
+        const tilt = lean && index === count - 1 ? -0.16 : ((seed + index) % 3 - 1) * 0.035;
+
         return (
-          <mesh key={`${seed}-${index}`} position={[index * 0.057, height / 2, 0]} rotation={[0, 0, ((seed + index) % 3 - 1) * 0.035]}>
-            <boxGeometry args={[width, height, 0.1]} />
+          <mesh key={`${seed}-${index}`} position={[index * 0.057, height / 2, 0]} rotation={[0, 0, tilt]}>
+            <boxGeometry args={[width, height, depth]} />
             <meshStandardMaterial color={colors[(seed + index) % colors.length]} roughness={0.78} />
           </mesh>
         );
@@ -392,12 +488,20 @@ function ShelfBooks({ count, position, seed }: { count: number; position: [numbe
   );
 }
 
-function BookStack({ position, colors }: { position: [number, number, number]; colors: string[] }) {
+function BookStack({
+  colors,
+  position,
+  seed = 0,
+}: {
+  colors: string[];
+  position: [number, number, number];
+  seed?: number;
+}) {
   return (
-    <group position={position}>
+    <group position={position} rotation={[0, 0, seed % 2 ? 0.025 : -0.02]}>
       {colors.map((color, index) => (
         <mesh key={`${color}-${index}`} position={[0, 0.015 + index * 0.035, 0]} rotation={[0, 0, index % 2 ? 0.02 : -0.015]}>
-          <boxGeometry args={[0.42 - index * 0.04, 0.03, 0.11]} />
+          <boxGeometry args={[0.42 - index * 0.05, 0.03, 0.11 + (index % 2) * 0.02]} />
           <meshStandardMaterial color={color} roughness={0.78} />
         </mesh>
       ))}
@@ -405,16 +509,100 @@ function BookStack({ position, colors }: { position: [number, number, number]; c
   );
 }
 
-function ShelfDecor({ position }: { position: [number, number, number] }) {
+function ShelfBowl({ position, seed }: { position: [number, number, number]; seed: number }) {
+  const colors = ['#d0b88d', '#2f332f', '#b99468', '#f1dbc0'];
+
   return (
     <group position={position}>
-      <mesh castShadow position={[0, 0.08, 0]}>
-        <cylinderGeometry args={[0.08, 0.1, 0.16, 18]} />
-        <meshStandardMaterial color="#d0b88d" roughness={0.82} />
+      <mesh castShadow position={[0, 0.055, 0]} scale={[1.25, 0.42, 1]}>
+        <sphereGeometry args={[0.11, 22, 10]} />
+        <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.7} />
       </mesh>
-      <mesh castShadow position={[0.2, 0.09, 0]} rotation={[0, 0, 0.2]}>
-        <boxGeometry args={[0.12, 0.18, 0.06]} />
-        <meshStandardMaterial color="#3f4a41" roughness={0.8} />
+      <mesh castShadow position={[0, 0.092, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.09, 0.008, 8, 24]} />
+        <meshStandardMaterial color="#211f1b" roughness={0.82} />
+      </mesh>
+    </group>
+  );
+}
+
+function ShelfBasket({ position, seed }: { position: [number, number, number]; seed: number }) {
+  return (
+    <group position={position}>
+      <mesh castShadow receiveShadow position={[0, 0.07, 0]}>
+        <boxGeometry args={[0.44, 0.14, 0.18]} />
+        <meshStandardMaterial color={seed % 2 ? '#a87945' : '#b8905f'} roughness={0.92} />
+      </mesh>
+      {[-0.16, -0.05, 0.06, 0.17].map((x) => (
+        <mesh key={x} position={[x, 0.143, 0.092]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.005, 0.005, 0.12, 6]} />
+          <meshStandardMaterial color="#6f4a2b" roughness={0.96} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function ShelfFoldedTextiles({ position, seed }: { position: [number, number, number]; seed: number }) {
+  const colors = ['#d9c9b0', '#f1dfbd', '#bfa98d'];
+
+  return (
+    <group position={position}>
+      {Array.from({ length: 3 }, (_, index) => (
+        <RoundedBox key={index} castShadow args={[0.44 - index * 0.035, 0.048, 0.18]} radius={0.025} position={[0, 0.026 + index * 0.05, 0]}>
+          <meshStandardMaterial color={colors[(seed + index) % colors.length]} roughness={0.96} />
+        </RoundedBox>
+      ))}
+    </group>
+  );
+}
+
+function ShelfFramedArt({ position, seed }: { position: [number, number, number]; seed: number }) {
+  const artColors = ['#f4dfbd', '#46563d', '#b99468', '#1f2522'];
+
+  return (
+    <group position={position} rotation={[0, 0, seed % 2 ? 0.08 : -0.06]}>
+      <mesh castShadow position={[0, 0.13, 0]}>
+        <boxGeometry args={[0.28, 0.22, 0.025]} />
+        <meshStandardMaterial color="#8b572f" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0.13, 0.016]}>
+        <planeGeometry args={[0.22, 0.16]} />
+        <meshStandardMaterial color={artColors[seed % artColors.length]} roughness={0.76} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+function ShelfVase({ position, seed }: { position: [number, number, number]; seed: number }) {
+  const colors = ['#d0b88d', '#f4dfbd', '#6f5a43', '#2f332f'];
+
+  return (
+    <group position={position}>
+      <mesh castShadow position={[0, 0.075, 0]}>
+        <cylinderGeometry args={[0.052, 0.075, 0.15, 18]} />
+        <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.78} />
+      </mesh>
+      <mesh castShadow position={[0, 0.165, 0]}>
+        <cylinderGeometry args={[0.032, 0.045, 0.07, 18]} />
+        <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.78} />
+      </mesh>
+    </group>
+  );
+}
+
+function ShelfTray({ position, seed }: { position: [number, number, number]; seed: number }) {
+  const colors = ['#7b4a28', '#2f332f', '#b99468'];
+
+  return (
+    <group position={position}>
+      <mesh castShadow position={[0, 0.025, 0]}>
+        <boxGeometry args={[0.46, 0.05, 0.15]} />
+        <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.78} />
+      </mesh>
+      <mesh castShadow position={[0, 0.065, 0]} scale={[1.6, 0.35, 0.8]}>
+        <sphereGeometry args={[0.12, 20, 8]} />
+        <meshStandardMaterial color={colors[(seed + 1) % colors.length]} roughness={0.84} />
       </mesh>
     </group>
   );
@@ -470,8 +658,8 @@ function Furniture() {
     <group>
       <Sofa />
       <StaticGroup>
-        <group position={[0, 0.38, -1.55]}>
-          <SceneModel material={tableMaterial} position={[0.1, -0.38, 0.1]} scale={[2.25, 2.05, 2.15]} url="/models/kenney/tableCoffee.glb" />
+        <group position={[0, 0.38, -1.185]}>
+          <SceneModel material={tableMaterial} position={[0.294, -0.38, 0.1]} scale={[2.25, 2.05, 2.15]} url="/models/kenney/tableCoffee.glb" />
           <SceneModel color="#3f5f43" position={[0.48, -0.14, -0.08]} rotation={[0, -0.28, 0]} scale={0.54} url="/models/kenney/plantSmall1.glb" />
         </group>
       </StaticGroup>
@@ -482,7 +670,6 @@ function Furniture() {
       <StaticGroup>
         <SideTable position={[1.82, 0.66, -2.62]} rotation={-Math.PI / 2} />
       </StaticGroup>
-      <Plant />
       <LargeFloorPlant position={[-2.82, 0.5, 1.5]} variant="bush" />
       <FloorLamp />
     </group>
@@ -496,7 +683,6 @@ function SideTable({ position, rotation }: { position: [number, number, number];
   return (
     <group position={position}>
       <SceneModel material={tableMaterial} position={modelPosition} rotation={[0, rotation, 0]} scale={1.72} url="/models/kenney/sideTableDrawers.glb" />
-      <SceneModel color="#3f5f43" position={[0.16 * Math.sign(rotation), 0, 0.0]} rotation={[0, 0.5, 0]} scale={0.62} url="/models/kenney/plantSmall1.glb" />
     </group>
   );
 }
@@ -511,23 +697,10 @@ function Sofa() {
       <group position={[0, 0.58, -2.78]}>
         <SceneModel material={sofaMaterial} position={[-1.543, -0.58, 0.36]} scale={[3.15, 2.35, 2.05]} url="/models/kenney/loungeSofa.glb" />
         {[-0.72, 0.02, 0.76].map((x, index) => (
-          <RoundedBox key={x} castShadow args={[0.46, 0.34, 0.16]} radius={0.08} position={[x, 0.22, -0.08]} rotation={[-0.4, 0, index === 1 ? 0 : x > 0 ? -0.04 : 0.04]}>
+          <RoundedBox key={x} castShadow args={[0.46, 0.34, 0.16]} radius={0.08} position={[x, 0.11, -0.23]} rotation={[-0.34, 0, index === 1 ? 0 : x > 0 ? -0.04 : 0.04]}>
             <primitive attach="material" object={index === 1 ? lightPillowMaterial : greenPillowMaterial} />
           </RoundedBox>
         ))}
-      </group>
-    </StaticGroup>
-  );
-}
-
-function Plant() {
-  return (
-    <StaticGroup>
-      <group position={[-2.78, 0.55, -3.02]}>
-        <SceneModel color="#7a4d32" position={[0, -0.54, 0]} scale={2.2} url="/models/kenney/pot_large.glb" />
-        <SceneModel color="#78a96b" emissive="#2b4d28" emissiveIntensity={0.16} position={[-0.02, -0.02, 0.01]} rotation={[0, 0.35, 0]} scale={1.76} url="/models/kenney/plant_bushDetailed.glb" />
-        <SceneModel color="#8fbd79" emissive="#304f2c" emissiveIntensity={0.18} position={[-0.12, 0.34, -0.02]} rotation={[0, -0.65, 0]} scale={2.08} url="/models/kenney/plant_flatTall.glb" />
-        <SceneModel color="#6fa765" emissive="#264825" emissiveIntensity={0.16} position={[0.28, 0.12, 0.08]} rotation={[0, 1.05, 0]} scale={1.54} url="/models/kenney/plant_flatTall.glb" />
       </group>
     </StaticGroup>
   );
@@ -537,11 +710,14 @@ function LargeFloorPlant({ position, variant }: { position: [number, number, num
   return (
     <StaticGroup>
       <group position={position}>
-        <SceneModel color="#7a4d32" position={[0, -0.48, 0]} scale={1.82} url="/models/kenney/pot_large.glb" />
+        <SceneModel color="#7a4d32" position={[0, -0.54, 0]} scale={2.2} url="/models/kenney/pot_large.glb" />
         {variant === 'bush' ? (
           <>
-            <SceneModel color="#78a96b" emissive="#2b4d28" emissiveIntensity={0.16} position={[0, -0.08, 0]} rotation={[0, 0.45, 0]} scale={1.22} url="/models/kenney/plant_bushDetailed.glb" />
-            <SceneModel color="#8fbd79" emissive="#304f2c" emissiveIntensity={0.18} position={[0.12, 0.12, 0.02]} rotation={[0, -0.9, 0]} scale={1.0} url="/models/kenney/plant_flatTall.glb" />
+            <SceneModel color="#78a96b" emissive="#2b4d28" emissiveIntensity={0.16} position={[-0.02, -0.02, 0.01]} rotation={[0, 0.35, 0]} scale={1.76} url="/models/kenney/plant_bushDetailed.glb" />
+            <SceneModel color="#8fbd79" emissive="#304f2c" emissiveIntensity={0.18} position={[-0.12, 0.34, -0.02]} rotation={[0, -0.65, 0]} scale={2.08} url="/models/kenney/plant_flatTall.glb" />
+            <SceneModel color="#6fa765" emissive="#264825" emissiveIntensity={0.16} position={[0.28, 0.12, 0.08]} rotation={[0, 1.05, 0]} scale={1.54} url="/models/kenney/plant_flatTall.glb" />
+            <SceneModel color="#8fbd79" emissive="#304f2c" emissiveIntensity={0.16} position={[0.04, 0.82, 0.02]} rotation={[0, -0.35, 0]} scale={1.36} url="/models/kenney/plant_flatTall.glb" />
+            <SceneModel color="#78a96b" emissive="#2b4d28" emissiveIntensity={0.14} position={[0.02, 0.7, 0.02]} rotation={[0, 0.85, 0]} scale={0.96} url="/models/kenney/plant_bushDetailed.glb" />
           </>
         ) : (
           <>
@@ -582,6 +758,7 @@ function DestinationObject({ activeId, node }: DestinationObjectProps) {
         {node.id === 'about' && <FramedPortrait active={isActive} />}
         {node.id === 'chess' && <ChessBoard color={node.accent} active={isActive} />}
         {node.id === 'synth' && <MidiKeyboard color={node.accent} active={isActive} />}
+        {node.id === 'spotify' && <StandingSpeaker active={isActive} />}
         <InteractiveSparkle
           active={isActive}
           center={sparkle.center}
@@ -591,6 +768,58 @@ function DestinationObject({ activeId, node }: DestinationObjectProps) {
         />
       </group>
     </StaticGroup>
+  );
+}
+
+function StandingSpeaker({ active }: { active: boolean }) {
+  const cabinetMaterial = useMemo(() => createWoodMaterial('furniture'), []);
+  const scale = active ? 1.025 : 1;
+
+  return (
+    <group scale={scale} rotation={[0, -0.04, 0]}>
+      <RoundedBox castShadow receiveShadow args={[0.68, 0.96, 0.44]} radius={0.035} position={[0, 1.0, 0]}>
+        <primitive attach="material" object={cabinetMaterial} />
+      </RoundedBox>
+      <mesh castShadow position={[0, 1.0, 0.226]}>
+        <boxGeometry args={[0.58, 0.86, 0.024]} />
+        <meshStandardMaterial color="#121413" roughness={0.84} />
+      </mesh>
+      <SpeakerDriver position={[0, 1.21, 0.25]} radius={0.115} />
+      <SpeakerDriver position={[0, 0.84, 0.25]} radius={0.205} />
+      {[-0.23, 0.23].map((x) => (
+        <mesh key={`post-${x}`} castShadow position={[x, 0.35, 0]}>
+          <boxGeometry args={[0.065, 0.38, 0.065]} />
+          <meshStandardMaterial color="#111313" metalness={0.55} roughness={0.48} />
+        </mesh>
+      ))}
+      <mesh castShadow receiveShadow position={[0, 0.14, 0]}>
+        <boxGeometry args={[0.72, 0.07, 0.5]} />
+        <meshStandardMaterial color="#101212" metalness={0.56} roughness={0.5} />
+      </mesh>
+      <mesh castShadow position={[0, 0.54, 0]}>
+        <boxGeometry args={[0.72, 0.07, 0.48]} />
+        <meshStandardMaterial color="#101212" metalness={0.56} roughness={0.5} />
+      </mesh>
+    </group>
+  );
+}
+
+function SpeakerDriver({ position, radius }: { position: [number, number, number]; radius: number }) {
+  return (
+    <group position={position}>
+      <mesh castShadow>
+        <torusGeometry args={[radius, radius * 0.13, 12, 32]} />
+        <meshStandardMaterial color="#c6c9c7" metalness={0.72} roughness={0.34} />
+      </mesh>
+      <mesh position={[0, 0.012, 0]}>
+        <circleGeometry args={[radius * 0.86, 32]} />
+        <meshStandardMaterial color="#252827" roughness={0.62} />
+      </mesh>
+      <mesh position={[0, 0, 0.018]} scale={[1, 1, 0.28]}>
+        <sphereGeometry args={[radius * 0.43, 24, 12]} />
+        <meshStandardMaterial color="#0d0f0f" roughness={0.4} />
+      </mesh>
+    </group>
   );
 }
 
@@ -823,7 +1052,7 @@ function ChessBoard({ active, color }: { active: boolean; color: string }) {
 }
 
 function MidiKeyboard({ active, color }: { active: boolean; color: string }) {
-  const whiteKeys = Array.from({ length: 8 }, (_, index) => -0.07 + index * 0.052);
+  const whiteKeys = Array.from({ length: 7 }, (_, index) => -0.07 + index * 0.052);
   const blackKeyIndexes = [0, 1, 3, 4, 5];
   const pads = [
     [-0.27, -0.07],
@@ -888,7 +1117,13 @@ function CatController({
   const body = useRef<THREE.Group>(null);
   const keys = useRef<KeyState>({ forward: false, backward: false, left: false, right: false });
   const facing = useRef(0);
-  const motion = useRef<CatMotionState>({ gaitPhase: 0, move: 0, speed: 0, turn: 0 });
+  const motion = useRef<CatMotionState>({
+    gaitPhase: 0,
+    move: 0,
+    posture: createCatPostureState(),
+    speed: 0,
+    turn: 0,
+  });
   const selectedRef = useRef<NavNode['id'] | null>(null);
   const lastCollisionEvent = useRef(0);
   const destinationObstacles = useMemo(
@@ -929,10 +1164,16 @@ function CatController({
     if (!body.current) return;
 
     const translation = body.current.position;
-    const turnInput =
+    const requestedTurn =
       Number(keys.current.left || mobileInput.current.left) -
       Number(keys.current.right || mobileInput.current.right);
-    const moveInput = Number(keys.current.forward || mobileInput.current.forward);
+    const requestedMove = Number(keys.current.forward || mobileInput.current.forward);
+    const movementRequested = requestedMove !== 0 || requestedTurn !== 0;
+    motion.current.posture ??= createCatPostureState();
+    updateCatPosture(motion.current.posture, delta, movementRequested);
+    const standing = isCatStanding(motion.current.posture);
+    const turnInput = standing ? requestedTurn : 0;
+    const moveInput = standing ? requestedMove : 0;
     const turnSpeed = 2.35;
     const maxSpeed = 1.38;
     const targetMove = moveInput;
@@ -946,8 +1187,8 @@ function CatController({
 
     const direction = new THREE.Vector3(-Math.sin(facing.current), 0, -Math.cos(facing.current));
     const proposed = {
-      x: THREE.MathUtils.clamp(translation.x + direction.x * maxSpeed * motion.current.move * delta, -ROOM_LIMIT, ROOM_LIMIT),
-      z: THREE.MathUtils.clamp(translation.z + direction.z * maxSpeed * motion.current.move * delta, -ROOM_LIMIT, ROOM_LIMIT),
+      x: THREE.MathUtils.clamp(translation.x + direction.x * maxSpeed * motion.current.move * delta, -CAT_ROOM_LIMIT, CAT_ROOM_LIMIT),
+      z: THREE.MathUtils.clamp(translation.z + direction.z * maxSpeed * motion.current.move * delta, -CAT_ROOM_LIMIT, CAT_ROOM_LIMIT),
     };
     const resolved = resolveBlockedMove({ x: translation.x, z: translation.z }, proposed, destinationObstacles);
     const wasBlocked =
@@ -979,7 +1220,7 @@ function CatController({
       }))
       .sort((a, b) => a.distance - b.distance)[0];
 
-    const nextActiveId = nearest && nearest.distance < 0.58 ? nearest.node.id : null;
+    const nextActiveId = nearest && nearest.distance < nearest.node.interactionRadius ? nearest.node.id : null;
 
     if (nextActiveId !== selectedRef.current) {
       selectedRef.current = nextActiveId;
@@ -1001,6 +1242,7 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
   const root = useRef<THREE.Group>(null);
   const tailBones = useRef<CatBonePose[]>([]);
   const legBones = useRef<CatLegPose[]>([]);
+  const postureBones = useRef<CatPostureBonePose[]>([]);
   const headBone = useRef<CatBonePose | null>(null);
   const earBones = useRef<CatBonePose[]>([]);
 
@@ -1013,7 +1255,7 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       }
     });
 
-    tailBones.current = ['tail.CTRL_030', 'tail_07', 'tail.01_08', 'tail.02_09', 'tail.03_010']
+    tailBones.current = ['tailCTRL_030', 'tail_07', 'tail01_08', 'tail02_09', 'tail03_010']
       .map((name) => model.getObjectByName(name))
       .filter((object): object is THREE.Object3D => Boolean(object))
       .map((object) => ({
@@ -1035,10 +1277,23 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       };
     }).filter((pose): pose is CatLegPose => Boolean(pose));
 
+    postureBones.current = Object.entries(CAT_SIT_BONE_OFFSETS)
+      .map(([name, offset]) => {
+        const object = model.getObjectByName(name);
+        if (!object) return null;
+
+        return {
+          object,
+          offset,
+          rotation: object.rotation.clone(),
+        };
+      })
+      .filter((pose): pose is CatPostureBonePose => Boolean(pose));
+
     const head = model.getObjectByName('head_018');
     headBone.current = head ? { object: head, rotation: head.rotation.clone() } : null;
 
-    earBones.current = ['ear.L_019', 'ear.R_020']
+    earBones.current = ['earL_019', 'earR_020']
       .map((name) => model.getObjectByName(name))
       .filter((object): object is THREE.Object3D => Boolean(object))
       .map((object) => ({
@@ -1063,6 +1318,8 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
   useFrame(({ clock }, delta) => {
     const walk = motion.current.speed;
     const turn = motion.current.turn;
+    const sitAmount = THREE.MathUtils.smoothstep(motion.current.posture.sitAmount, 0, 1);
+    const isPosturing = sitAmount > 0.001;
     const turnAmount = Math.abs(turn);
     const gaitAmount = Math.max(walk, turnAmount * 0.58);
     const idleAmount = 1 - THREE.MathUtils.clamp(gaitAmount * 1.8, 0, 1);
@@ -1072,14 +1329,19 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       const targetTimeScale = gaitAmount > 0.035 ? 0.48 + walk * 0.92 + turnAmount * 0.38 : 0;
       action.paused = gaitAmount < 0.025 && action.timeScale < 0.03;
       action.timeScale = THREE.MathUtils.damp(action.timeScale, targetTimeScale, 8, delta);
-      action.weight = 1;
+      action.weight = 1 - sitAmount;
     }
 
     if (root.current) {
       const breath = Math.sin(clock.elapsedTime * 1.45) * idleAmount;
       root.current.rotation.z = THREE.MathUtils.damp(root.current.rotation.z, -turn * 0.09, 8, delta);
       root.current.rotation.x = THREE.MathUtils.damp(root.current.rotation.x, walk * 0.04 + turnAmount * 0.012, 8, delta);
-      root.current.position.y = THREE.MathUtils.damp(root.current.position.y, -0.31 + breath * 0.005, 4, delta);
+      root.current.position.y = THREE.MathUtils.damp(
+        root.current.position.y,
+        -0.31 - sitAmount * 0.2 + breath * 0.005,
+        8,
+        delta,
+      );
       root.current.scale.setScalar(0.0019 * (1 + breath * 0.006));
     }
 
@@ -1088,6 +1350,8 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       bone.object.rotation.y -= bone.lastOffset.y;
       bone.object.rotation.z -= bone.lastOffset.z;
       bone.lastOffset.set(0, 0, 0);
+
+      if (isPosturing) return;
 
       if (gaitAmount < 0.16) {
         const settleRate = 5 + idleAmount * 7;
@@ -1113,11 +1377,19 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       }
     });
 
+    if (isPosturing) {
+      postureBones.current.forEach(({ object, offset, rotation }) => {
+        object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + offset[0] * sitAmount, 14, delta);
+        object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y + offset[1] * sitAmount, 14, delta);
+        object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z + offset[2] * sitAmount, 14, delta);
+      });
+    }
+
     if (headBone.current) {
       const { object, rotation } = headBone.current;
       const idleLook = Math.sin(clock.elapsedTime * 0.72) * 0.055 * idleAmount;
       const idleNod = Math.sin(clock.elapsedTime * 1.15 + 0.8) * 0.025 * idleAmount;
-      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + idleNod, 4, delta);
+      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + idleNod - sitAmount * 0.08, 4, delta);
       object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y + idleLook - turn * 0.04, 4, delta);
       object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z - turn * 0.018, 4, delta);
     }

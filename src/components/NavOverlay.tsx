@@ -3,6 +3,8 @@ import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { NavNode } from '../data/navNodes';
 import { trackEvent } from '../lib/telemetry';
+import { useSpotifyNowPlaying } from '../spotify/useSpotifyNowPlaying';
+import { SpotifyNowPlayingCard } from './SpotifyNowPlayingCard';
 
 type NavOverlayProps = {
   activeId: NavNode['id'] | null;
@@ -11,6 +13,7 @@ type NavOverlayProps = {
 
 export function NavOverlay({ activeId, nodes }: NavOverlayProps) {
   const activeNode = nodes.find((node) => node.id === activeId);
+  const spotify = useSpotifyNowPlaying(activeNode?.kind === 'spotify');
   const [displayedNode, setDisplayedNode] = useState<NavNode | undefined>(activeNode);
   const [isVisible, setIsVisible] = useState(false);
 
@@ -49,6 +52,16 @@ export function NavOverlay({ activeId, nodes }: NavOverlayProps) {
   }
 
   const label = displayedNode.navLabel ?? displayedNode.label;
+  const popupClassName = `discovery-popup${displayedNode.kind === 'spotify' ? ' spotify-popup' : ''}${isVisible ? ' is-visible' : ''}`;
+
+  if (displayedNode.kind === 'spotify') {
+    return (
+      <div className="nav-overlay" aria-live="polite">
+        <SpotifyNowPlayingCard className={popupClassName} {...spotify} />
+      </div>
+    );
+  }
+
   const Icon = displayedNode.Icon;
   const content = (
     <>
@@ -65,7 +78,6 @@ export function NavOverlay({ activeId, nodes }: NavOverlayProps) {
     </>
   );
   const handleOpen = () => trackEvent('route_opened_from_scene', { destination: displayedNode.id });
-  const popupClassName = `discovery-popup${isVisible ? ' is-visible' : ''}`;
 
   return (
     <div className="nav-overlay" aria-live="polite">
