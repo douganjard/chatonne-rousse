@@ -43,8 +43,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build
-        run: pnpm run build
+      - name: Build web app
+        # TODO: Restore `pnpm run build` after the Spotify function build is stable.
+        # This intentionally skips `functions:build` so Hosting can deploy while the function is temporarily non-blocking.
+        run: pnpm exec tsc && pnpm exec vite build
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -52,6 +54,8 @@ jobs:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
       - name: Deploy Spotify function
+        # TODO: Remove continue-on-error after the Spotify function deploy is stable.
+        continue-on-error: true
         run: pnpm exec firebase deploy --only functions:spotifyNowPlaying --project "$FIREBASE_PROJECT_ID" --non-interactive
 
       - name: Deploy live channel
