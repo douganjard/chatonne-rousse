@@ -1,5 +1,13 @@
 # Room Acceptance Checklist
 
+## Spotify Speaker
+
+- [ ] The large walnut speaker replaces the back-left floor plant without removing the left side table.
+- [ ] The tweeter, woofer, silver driver rings, black baffle, and steel stand are readable in desktop and mobile follow views.
+- [ ] The cat can touch the speaker's knock box, cannot enter its center, and triggers the listening popup within the larger interaction radius.
+- [ ] The popup shows uncropped artwork, status, title, creator, collection, Spotify attribution, and a link to the supplied Spotify item.
+- [ ] Spotify does not appear in the hamburger menu. Reduced-motion mode shows the same live status tile; scene loading does not request it.
+
 Use this checklist before accepting changes to the interactive room scene. It is scoped to the home-page room in `DiscoveryScene` and the destination navigation overlay.
 
 ## Room Layout Invariants
@@ -21,10 +29,10 @@ Use this checklist before accepting changes to the interactive room scene. It is
 
 ## Plant And Window Separation
 
-- [ ] The large floor plant near the back-left corner remains separate from the left-wall window plant.
+- [ ] The Spotify speaker near the back-left corner remains separate from the left-wall window plant.
 - [ ] The window plant stays low enough that it reads as foreground decor, not as part of the window frame.
 - [ ] Plant foliage does not clip through the window pane, wall, baseboard, side table, or sofa.
-- [ ] The back-left plant and left-window plant each have distinct collision footprints where applicable; the cat should not be blocked by invisible plant space outside the visible pot/foliage.
+- [ ] The speaker and left-window plant have distinct collision footprints; the cat should not be blocked by invisible space outside either visible object.
 - [ ] Plant colors and emissive accents remain warm-green and do not overpower the window glow.
 
 ## Collisions And Movement
@@ -33,7 +41,7 @@ Use this checklist before accepting changes to the interactive room scene. It is
 - [ ] Sliding movement still works when the cat approaches an obstacle diagonally; the cat should not get stuck against simple furniture edges.
 - [ ] Room-edge clamping prevents the cat from passing through or behind walls.
 - [ ] No obstacle blocks the initial cat spawn or the direct approach path to any destination object.
-- [ ] Destination collision boxes let the cat touch the portrait, chessboard, and MIDI keyboard but prevent her center from passing through them.
+- [ ] Destination collision boxes let the cat touch the portrait, chessboard, MIDI keyboard, and speaker but prevent her center from passing through them.
 - [ ] The chessboard and MIDI keyboard occupy distinct left and right floor zones with clear walking space between them.
 - [ ] The cat can rotate freely beside each obstacle and can back away using normal controls.
 - [ ] Physics bodies remain fixed for static furniture, room pieces, and destination objects; the cat remains the only kinematic moving body.
@@ -49,6 +57,9 @@ Use this checklist before accepting changes to the interactive room scene. It is
 
 ## Controls And Accessibility
 
+- [ ] The cat starts seated, rises naturally after the initial scene load, and does not translate or turn until fully standing.
+- [ ] After 10 seconds without forward or turn input, the cat transitions into a seated pose.
+- [ ] Forward or turn input while seated or sitting down makes the cat stand before movement resumes, without snapping between poses.
 - [ ] `W` and `ArrowUp` move the cat forward; `A`/`ArrowLeft` and `D`/`ArrowRight` turn the cat.
 - [ ] `S` and `ArrowDown` are handled consistently with the current forward-only movement model and do not scroll the page while interacting with the scene.
 - [ ] Key listeners are cleaned up when the scene unmounts.

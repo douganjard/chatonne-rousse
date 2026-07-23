@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Menu, X } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { navNodes } from '../data/navNodes';
+import { isLinkNavNode, navNodes, type LinkNavNode } from '../data/navNodes';
 import { trackPageView } from '../lib/telemetry';
+
+const headerNavNodes = navNodes.filter(
+  (node): node is LinkNavNode => isLinkNavNode(node) && node.id !== 'chess',
+);
 
 export function SiteLayout() {
   const location = useLocation();
@@ -47,9 +51,6 @@ export function SiteLayout() {
     <div className="site-shell">
       <header className="site-header">
         <div className="header-cluster">
-          <NavLink to="/" className="brand" aria-label="Home">
-            Doug Anjard
-          </NavLink>
           <div className="menu-shell" ref={menuRef}>
             <button
               ref={menuButtonRef}
@@ -69,7 +70,7 @@ export function SiteLayout() {
               aria-label="Primary navigation"
               aria-hidden={!isMenuOpen}
             >
-              {navNodes.map((node) =>
+              {headerNavNodes.map((node) =>
                 node.external ? (
                   <a
                     key={node.id}
@@ -90,6 +91,9 @@ export function SiteLayout() {
               )}
             </nav>
           </div>
+          <NavLink to="/" className="brand" aria-label="Home">
+            Doug Anjard
+          </NavLink>
         </div>
       </header>
       <Outlet />

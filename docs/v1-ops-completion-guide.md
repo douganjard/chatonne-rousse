@@ -1,254 +1,219 @@
-# V1 Ops Completion Guide
+# V1 Ops Readiness Checklist
 
-Use this checklist to finish the operations lifecycle before the first V1 commit and public launch. The repository-side scaffolding exists, but several external systems still need account-level setup.
+Last reviewed: 2026-07-22.
 
-## Current State
+Use this as the working checklist for getting Chatonne Rousse from "deployed" to "robust V1." Checked items are complete or verified from this repository, local Git config, GitHub Actions results, or the Firebase default hosting URL. Unchecked items need account-level setup, a real pull request, or production-domain cutover verification.
 
-- Local Git repository exists on `main`.
-- No commit has been created yet.
-- Most current files are staged from the initial lifecycle setup.
-- GitHub remote has not been created or connected.
-- Firebase Hosting config exists, but the Firebase project ID and hosting site must be verified.
-- Squarespace DNS, GitHub secrets, Firebase deploy auth, analytics properties, and uptime checks are not configured yet.
-- Local validation passed previously with `pnpm run check` and `pnpm run test:smoke`.
-- Lighthouse CI ran, but currently reports warnings for home-page performance/LCP and home-page accessibility.
+## Current Verified State
 
-## 1. Before The First Commit
+- [x] Local repository is on `main`.
+- [x] Local worktree is clean.
+- [x] Git identity is configured globally and locally as `Doug Anjard <douganjard@gmail.com>` for future commits.
+- [x] Remote `origin` is `git@github.com:douganjard/chatonne-rousse.git`.
+- [x] GitHub repository is public.
+- [x] `main` is pushed to GitHub.
+- [x] Firebase project ID is `chatonne-rousse` in `.firebaserc`.
+- [x] Firebase default domain is live at `https://chatonne-rousse.web.app/`.
+- [x] Firebase deep link `https://chatonne-rousse.web.app/about` returns HTTP 200.
+- [x] Firebase model asset `https://chatonne-rousse.web.app/models/toon_cat_free.glb` returns HTTP 200.
+- [x] Latest verified `CI` run succeeded on commit `257220e`.
+- [x] Latest verified `Firebase Production` run succeeded on commit `257220e`.
+- [ ] Branch protection could not be verified from the unauthenticated public API; confirm manually in GitHub settings.
+- [ ] Squarespace custom-domain DNS cutover has not been verified.
+- [ ] Google Cloud Monitoring uptime checks have not been verified.
+- [ ] Firebase Analytics event receipt has not been verified in the Firebase or GA console.
 
-1. Review the staged diff:
+## 1. Source Control And Repo Hygiene
 
-   ```sh
-   git status --short
-   git diff --cached
-   git diff
-   ```
+- [x] Initialize Git repository.
+- [x] Use `main` as the production branch.
+- [x] Configure Git author/committer identity.
+- [x] Add `.gitignore` for dependencies, build output, local env files, reports, and generated artifacts.
+- [x] Add `README.md`.
+- [x] Add `CONTRIBUTING.md`.
+- [x] Add `.github/pull_request_template.md`.
+- [x] Add `.github/dependabot.yml`.
+- [x] Add `LICENSE`.
+- [x] Add `ATTRIBUTION.md`.
+- [x] Publish the repo to public GitHub.
+- [x] Push `main` to `origin`.
+- [ ] Enable or confirm branch protection on `main`.
+- [ ] Require pull requests before merging to `main`.
+- [ ] Require status checks before merging.
+- [ ] Require the `CI` workflow.
+- [ ] Consider requiring `Visual Smoke` and `Lighthouse` once PR runtime and warning posture are stable.
+- [ ] Disallow force pushes to `main`.
 
-2. Confirm the placeholder Firebase/site values:
+## 2. GitHub Actions
 
-   - `.firebaserc`: replace `chatonne-rousse` if the real Firebase project ID differs.
-   - `index.html`: replace `https://chatonne-rousse.web.app/` with the canonical production domain when known.
-   - `public/robots.txt`: replace the sitemap host when known.
-   - `public/sitemap.xml`: replace all URL hosts when known.
+- [x] Add `CI` workflow for pushes to `main` and pull requests.
+- [x] Add workflow concurrency so newer commits cancel stale runs.
+- [x] Install pnpm explicitly with `pnpm/action-setup@v4`.
+- [x] Use Node 22 in workflows.
+- [x] Run `pnpm install --frozen-lockfile`.
+- [x] Run `pnpm run check` in CI.
+- [x] Fix pnpm ignored-builds policy by approving `re2`.
+- [x] Verify `CI` passes on GitHub.
+- [x] Add Firebase production workflow for pushes to `main`.
+- [x] Verify Firebase production workflow passes on GitHub.
+- [x] Add Firebase preview workflow for pull requests.
+- [x] Add Visual Smoke workflow for scene/layout/content/model changes.
+- [x] Add Lighthouse workflow for frontend and public-asset changes.
+- [ ] Open a normal PR and verify Firebase Preview posts a preview channel URL.
+- [ ] Open or update a PR touching visual paths and verify `Visual Smoke` passes in GitHub.
+- [ ] Open or update a PR touching Lighthouse paths and verify `Lighthouse` passes or produces accepted warnings.
+- [ ] Decide whether `Visual Smoke` and `Lighthouse` should become required checks.
 
-3. Re-run local validation:
+## 3. Package And Build Policy
 
-   ```sh
-   CI=true pnpm run check
-   CI=true pnpm run test:smoke
-   ```
+- [x] Pin package manager in `package.json` to `pnpm@11.9.0`.
+- [x] Keep `pnpm-lock.yaml` valid for frozen installs.
+- [x] Keep allowed native/build scripts in `pnpm-workspace.yaml`.
+- [x] Approve build scripts for `@firebase/util`, `esbuild`, `protobufjs`, and `re2`.
+- [x] Keep TypeScript on a version supported by `typescript-eslint`.
+- [x] Update Vite `manualChunks` to the function form required by current Vite/Rolldown.
+- [x] Document known chunk-size warnings in `AGENTS.md`.
+- [x] Local `CI=true pnpm install --frozen-lockfile` passes.
+- [x] Local `CI=true pnpm run check` passes.
+- [x] Local Playwright smoke tests passed previously: 21 passed, 3 skipped.
+- [ ] Re-run `pnpm run test:smoke` after the next scene, layout, route, or asset change.
 
-4. Optional but recommended before V1:
+## 4. Firebase Hosting
 
-   ```sh
-   pnpm run analyze
-   pnpm run lhci
-   ```
-
-   Treat Lighthouse warnings as V1 quality items. The current config warns instead of failing so deployment is not blocked while the site is still being tuned.
-
-5. Commit only after the V1 baseline is acceptable:
-
-   ```sh
-   git commit -m "Set up V1 operations lifecycle"
-   ```
-
-## 2. GitHub Setup
-
-1. Create a public GitHub repository named `chatonne-rousse`.
-2. Add the remote and push:
-
-   ```sh
-   git remote add origin git@github.com:YOUR_GITHUB_USER/chatonne-rousse.git
-   git push -u origin main
-   ```
-
-3. Configure repository settings:
-
-   - Enable Actions.
-   - Enable Dependabot alerts.
-   - Enable secret scanning.
-   - Add branch protection for `main`.
-   - Require pull requests before merging.
-   - Require status checks before merging.
-   - Require the `CI` workflow.
-   - Add `Visual Smoke` and `Lighthouse` as required checks once their runtime and warning posture are stable.
-   - Disallow force pushes to `main`.
-
-4. Verify the workflows start cleanly on the first push:
-
-   - `CI`
-   - `Visual Smoke` when relevant paths change
-   - `Lighthouse`
-   - Firebase workflows after Firebase secrets are added
-
-## 3. Firebase Project And Hosting
-
-1. Create or choose a Firebase project.
-2. Update `.firebaserc` if the project ID is not `chatonne-rousse`.
-3. Login and select the project:
-
-   ```sh
-   pnpm exec firebase login
-   pnpm exec firebase use --add
-   ```
-
-4. Confirm Hosting uses the existing repo config:
-
-   - Public directory: `dist`
-   - SPA rewrite: `** -> /index.html`
-   - Static asset caching: configured in `firebase.json`
-   - Security headers: configured in `firebase.json`
-
-5. Create a Firebase web app and copy its config values into GitHub repository variables. Use repository variables, not secrets, for the Firebase web app config because these values are embedded into the public browser bundle:
-
-   - `VITE_FIREBASE_API_KEY`
-   - `VITE_FIREBASE_AUTH_DOMAIN`
-   - `VITE_FIREBASE_PROJECT_ID`
-   - `VITE_FIREBASE_STORAGE_BUCKET`
-   - `VITE_FIREBASE_MESSAGING_SENDER_ID`
-   - `VITE_FIREBASE_APP_ID`
-   - `VITE_FIREBASE_MEASUREMENT_ID`
-   - `VITE_ANALYTICS_DISABLED`: set to `false` when analytics should run, or `true` as a production kill switch.
-
-6. Confirm the Firebase Hosting GitHub workflows expose those variables to the Vite build. The preview and production workflows set the `VITE_*` values from the GitHub `vars` context.
-
-7. Add deploy authentication:
-
-   - GitHub repository variable: `FIREBASE_PROJECT_ID`
-   - GitHub repository secret: `FIREBASE_SERVICE_ACCOUNT`
-
-8. Run a manual deploy once before relying on CI:
-
-   ```sh
-   pnpm run build
-   pnpm run firebase:deploy
-   ```
-
-9. Verify Firebase-hosted URLs:
-
-   - `/`
-   - `/about`
-   - `/writing`
-   - `/contact`
-   - `/missing-route`
-   - `/models/toon_cat_free.glb`
-
-## 4. GitHub Actions Deploy Wiring
-
-The workflow files exist, but they are not proven against the real repository and Firebase project yet.
-
-1. Confirm the preview workflow posts a Firebase preview URL on pull requests.
-2. Confirm the production workflow deploys only from `main`.
-3. Confirm the service account has the minimum permissions needed for Firebase Hosting deploys.
-4. Add `VITE_*` Firebase web config values to the build environment if production analytics should be enabled.
-5. Confirm forked PR behavior is acceptable. The preview workflow currently deploys only PRs whose source branch is in the same repository.
+- [x] Create or choose Firebase project `chatonne-rousse`.
+- [x] Add `.firebaserc` with the `chatonne-rousse` project alias.
+- [x] Add `firebase.json`.
+- [x] Configure Hosting public directory as `dist`.
+- [x] Configure SPA rewrite from `**` to `/index.html`.
+- [x] Configure long-cache headers for hashed assets.
+- [x] Configure model asset caching.
+- [x] Configure no-cache behavior for `index.html`.
+- [x] Configure baseline security headers.
+- [x] Create Firebase web app.
+- [x] Add Firebase web config repository variables for Vite builds.
+- [x] Add `FIREBASE_PROJECT_ID` repository variable.
+- [x] Add `FIREBASE_SERVICE_ACCOUNT` repository secret.
+- [x] Confirm production deploy from `main` works.
+- [x] Confirm Firebase default-domain root URL works.
+- [x] Confirm Firebase default-domain deep link works.
+- [x] Confirm representative GLB asset URL works.
+- [ ] Confirm Firebase service account uses the minimum practical deploy permissions.
+- [ ] Run and document one manual Firebase deploy or rollback drill.
 
 ## 5. Squarespace DNS Cutover
 
-Use Squarespace only as DNS/domain management.
+Use Squarespace only as DNS/domain management. Do not embed the React app into Squarespace page content.
 
-1. In Firebase Hosting, add the custom domain.
-2. In Squarespace DNS, add Firebase's TXT verification record.
-3. Add Firebase Hosting records for the chosen hostnames:
+- [ ] Choose the final production domain and hostnames.
+- [ ] In Firebase Hosting, add the custom domain.
+- [ ] In Squarespace DNS, add Firebase's TXT verification record.
+- [ ] Add Firebase Hosting DNS records for the chosen hostnames, as provided by Firebase.
+- [ ] For apex and `www`, use Firebase's documented A record target when applicable:
 
-   ```text
-   @    A    199.36.158.100
-   www  A    199.36.158.100
-   ```
+  ```text
+  @    A    199.36.158.100
+  www  A    199.36.158.100
+  ```
 
-4. Remove conflicting records for the same hostnames.
-5. Wait for DNS and SSL provisioning.
-6. Verify:
+- [ ] Remove conflicting A, AAAA, or CNAME records for the same hostnames.
+- [ ] Wait for DNS propagation and Firebase SSL provisioning.
+- [ ] Verify `https://YOUR_DOMAIN/`.
+- [ ] Verify `https://YOUR_DOMAIN/about`.
+- [ ] Verify `https://YOUR_DOMAIN/models/toon_cat_free.glb`.
+- [ ] Add custom domain to Firebase authorized domains if needed.
 
-   - `https://YOUR_DOMAIN/`
-   - `https://YOUR_DOMAIN/about`
-   - `https://YOUR_DOMAIN/models/toon_cat_free.glb`
+## 6. Canonical URLs, Search, And Social Metadata
 
-7. Update canonical domain references after cutover:
+- [x] Add `public/robots.txt`.
+- [x] Add `public/sitemap.xml`.
+- [x] Add canonical URL metadata in `index.html`.
+- [x] Add Open Graph title, description, and URL metadata.
+- [x] Add Twitter card metadata.
+- [x] Current canonical, sitemap, and robots URLs point to `https://chatonne-rousse.web.app/`.
+- [ ] After Squarespace DNS cutover, replace Firebase default-domain URLs with the final production domain in `index.html`.
+- [ ] After Squarespace DNS cutover, replace the sitemap host in `public/robots.txt`.
+- [ ] After Squarespace DNS cutover, replace URL hosts in `public/sitemap.xml`.
+- [ ] Submit or inspect the final sitemap in Google Search Console if search indexing matters for V1.
 
-   - `index.html`
-   - `public/robots.txt`
-   - `public/sitemap.xml`
-   - Google Cloud Monitoring checks
-   - Firebase authorized domains if needed
+## 7. Analytics And Privacy
 
-## 6. Analytics And Privacy
+Repository-side telemetry exists in `src/lib/telemetry.ts`. It runs only in production, only when Firebase config is present, and only when `VITE_ANALYTICS_DISABLED` is not `true`.
 
-Repository-side telemetry exists in `src/lib/telemetry.ts`, but it is inert unless production Firebase config is present.
+- [x] Add Firebase Analytics initialization guarded by production config.
+- [x] Add route/page-view tracking.
+- [x] Add Web Vitals tracking for CLS, INP, LCP, and TTFB.
+- [x] Add custom events:
+  - `scene_loaded`
+  - `webgl_failed`
+  - `reduced_motion_fallback`
+  - `destination_popup_opened`
+  - `route_opened_from_scene`
+  - `cat_collision_blocked`
+  - `web_vital`
+- [x] Keep telemetry privacy-conscious in code: no user IDs, no ad tracking, no marketing pixels.
+- [x] Add `VITE_ANALYTICS_DISABLED` kill switch.
+- [ ] Confirm Google Analytics for Firebase property is connected.
+- [ ] Confirm production deploy includes `VITE_FIREBASE_MEASUREMENT_ID`.
+- [ ] Confirm expected events arrive in Firebase or GA DebugView/Realtime.
+- [ ] Document any future marketing analytics separately before enabling them.
 
-1. Create or connect the Google Analytics for Firebase property.
-2. Confirm production builds include `VITE_FIREBASE_MEASUREMENT_ID`.
-3. Confirm analytics remains privacy-conscious:
+## 8. Google Cloud Monitoring
 
-   - No user IDs.
-   - No ad personalization.
-   - No marketing pixels.
-   - No invasive profiling.
+Google Cloud Monitoring uptime checks are account-level resources and are not configured in this repo.
 
-4. Verify expected events:
+- [ ] Create public HTTPS uptime check for `https://YOUR_DOMAIN/`.
+- [ ] Create public HTTPS uptime check for `https://YOUR_DOMAIN/about`.
+- [ ] Create public HTTPS uptime check for `https://YOUR_DOMAIN/models/toon_cat_free.glb`.
+- [ ] Alert on HTTP failure.
+- [ ] Alert on SSL certificate failure or expiry.
+- [ ] Alert on slow response.
+- [ ] Alert on representative asset 404.
+- [ ] Configure notification channels that you will actually see.
+- [ ] After DNS cutover, update checks to the final production domain.
 
-   - `page_view`
-   - `scene_loaded`
-   - `webgl_failed`
-   - `reduced_motion_fallback`
-   - `destination_popup_opened`
-   - `route_opened_from_scene`
-   - `cat_collision_blocked`
-   - `web_vital`
+## 9. Release And Rollback
 
-5. Document any future marketing analytics separately before enabling them.
+- [x] Add [release.md](release.md) release and operations runbook.
+- [x] Document steady-state release flow.
+- [x] Document Firebase rollback commands.
+- [x] Document Git revert fallback.
+- [x] Document visual QA process in [visual-qa.md](visual-qa.md).
+- [x] Document room acceptance checklist in [room-acceptance-checklist.md](room-acceptance-checklist.md).
+- [ ] Test or rehearse Firebase Hosting rollback against the real project.
+- [ ] Update [release.md](release.md) once the final custom domain is known.
+- [ ] Update [release.md](release.md) after branch protection is confirmed.
 
-## 7. Google Cloud Monitoring
+## 10. V1 Quality Work Still Open
 
-Google Cloud Monitoring checks are not configured in the repo and must be created in the Google Cloud project.
+These are not blockers for lifecycle wiring, but they are the main gaps before calling the public site a robust V1.
 
-Create public HTTPS uptime checks for:
+- [ ] Re-run Lighthouse CI and decide whether current warnings are acceptable for V1.
+- [ ] Improve home-page LCP if it remains above budget.
+- [ ] Improve home-page accessibility if it remains below budget.
+- [ ] Review bundle visualization from `pnpm run analyze`.
+- [ ] Reduce the large Three.js scene chunk if it becomes a user-facing performance issue.
+- [ ] Evaluate GLB compression with Draco or meshopt.
+- [ ] Decide whether to add runtime error monitoring such as Sentry.
+- [ ] Keep Firebase Performance Monitoring for web disabled unless the beta SDK posture changes.
 
-- `https://YOUR_DOMAIN/`
-- `https://YOUR_DOMAIN/about`
-- `https://YOUR_DOMAIN/models/toon_cat_free.glb`
-
-Alert on:
-
-- HTTP failure.
-- SSL certificate failure or expiry.
-- Slow response.
-- Asset 404.
-
-Use notification channels that you will actually see, such as email or a preferred incident channel.
-
-## 8. V1 Quality Work Still Open
-
-These are not blockers for wiring the lifecycle, but they are the main gaps before calling the site a robust V1.
-
-- Lighthouse home-page performance is low because the 3D scene is heavy.
-- Lighthouse LCP is above the current 4 second warning budget.
-- Home-page accessibility is slightly below the current 0.9 warning budget.
-- The Three.js scene chunk is still large; bundle analysis is available with `pnpm run analyze`.
-- GLB asset compression with Draco or meshopt is documented as future work but not implemented.
-- Firebase Performance Monitoring for web was intentionally not enabled because the web SDK is beta.
-- Error monitoring with Sentry or another runtime error tool is not configured.
-- The production domain, sitemap, robots, and Open Graph URLs still use placeholder Firebase Hosting URLs.
-- Branch protection, required status checks, and deploy permissions cannot be completed until the public GitHub repository exists.
-
-## 9. Launch Acceptance Checklist
+## 11. Launch Acceptance
 
 Before announcing or treating V1 as launched:
 
-- [ ] First commit exists locally.
-- [ ] Public GitHub remote exists.
-- [ ] `main` is pushed.
-- [ ] Branch protection is enabled.
-- [ ] CI passes in GitHub.
-- [ ] Playwright smoke tests pass in GitHub.
+- [x] Public GitHub remote exists.
+- [x] `main` is pushed.
+- [x] CI passes in GitHub.
+- [x] Firebase production deploy works from `main`.
+- [x] Firebase default domain works over HTTPS.
+- [x] Deep links refresh without 404s on Firebase default domain.
+- [x] Representative GLB asset is served from Firebase Hosting.
+- [x] Rollback command is documented.
+- [ ] Branch protection is enabled and verified.
+- [ ] Firebase preview deploy works for a real pull request.
+- [ ] Playwright smoke tests pass in GitHub for a relevant PR.
 - [ ] Lighthouse workflow runs in GitHub and warnings are accepted or fixed.
-- [ ] Firebase project ID is real in `.firebaserc`.
-- [ ] Firebase preview deploy works for a pull request.
-- [ ] Firebase production deploy works from `main`.
 - [ ] Squarespace DNS points the chosen domain to Firebase Hosting.
-- [ ] HTTPS is provisioned.
-- [ ] Deep links refresh without 404s.
+- [ ] HTTPS is provisioned for the final custom domain.
 - [ ] Firebase Analytics receives only intended events.
 - [ ] Google Cloud Monitoring checks are green.
-- [ ] Rollback command is tested or documented with the real project.
 - [ ] Canonical URLs, sitemap, and robots use the final production domain.

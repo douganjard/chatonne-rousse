@@ -1,13 +1,16 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { navNodes } from '../data/navNodes';
+import { isLinkNavNode, navNodes } from '../data/navNodes';
 import { trackEvent } from '../lib/telemetry';
+import { useSpotifyNowPlaying } from '../spotify/useSpotifyNowPlaying';
+import { SpotifyNowPlayingCard } from './SpotifyNowPlayingCard';
 
 type ReducedMotionFallbackProps = {
   reason?: 'reduced_motion' | 'scene_loading';
 };
 
 export function ReducedMotionFallback({ reason }: ReducedMotionFallbackProps) {
+  const spotify = useSpotifyNowPlaying(reason === 'reduced_motion');
   useEffect(() => {
     if (reason === 'reduced_motion') {
       trackEvent('reduced_motion_fallback');
@@ -16,7 +19,7 @@ export function ReducedMotionFallback({ reason }: ReducedMotionFallbackProps) {
 
   return (
     <section className="fallback-scene" aria-label="Site destinations">
-      {navNodes.map((node) => {
+      {navNodes.filter(isLinkNavNode).map((node) => {
         const Icon = node.Icon;
 
         return node.external ? (
@@ -31,6 +34,7 @@ export function ReducedMotionFallback({ reason }: ReducedMotionFallbackProps) {
           </Link>
         );
       })}
+      {reason === 'reduced_motion' && <SpotifyNowPlayingCard className="fallback-spotify" {...spotify} />}
     </section>
   );
 }

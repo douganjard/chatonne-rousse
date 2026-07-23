@@ -1,5 +1,13 @@
 # Visual QA Workflow
 
+## Spotify Now Playing
+
+- Check the standing speaker at the left edge of the couch in desktop, `390x844`, and `844x390` follow views.
+- Approach from the front and both sides; verify the cat stays visible, contacts the speaker, and opens the popup without entering the cabinet.
+- Verify long track, artist, album, episode, and podcast names remain readable without overlapping the artwork, attribution, or arrow.
+- Confirm artwork uses `object-fit: contain`, retains its source aspect ratio, and falls back to the radio icon when loading fails.
+- Leave the interaction radius and background the page; confirm polling stops and the popup exits smoothly.
+
 Use this runbook when a Codex agent changes layout, styling, 3D scene code, navigation, content pages, or model assets. The goal is to make browser verification repeatable without changing app behavior.
 
 ## Start The App

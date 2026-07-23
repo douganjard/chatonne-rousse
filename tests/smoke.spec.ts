@@ -1,9 +1,29 @@
 import { expect, test } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { navNodes } from '../src/data/navNodes';
+import {
+  CAT_IDLE_BEFORE_SITTING_SECONDS,
+  CAT_INITIAL_SEATED_SECONDS,
+  CAT_SIT_DOWN_SECONDS,
+  CAT_STAND_UP_SECONDS,
+  createCatPostureState,
+  isCatStanding,
+  updateCatPosture,
+  type CatPostureState,
+} from '../src/scene/catPosture';
 import { CAT_COLLISION_RADIUS, resolveBlockedMove, type ObstacleRect } from '../src/scene/collisions';
 
 const routes = ['/', '/about', '/writing', '/contact', '/missing-route'];
+
+function advancePosture(state: CatPostureState, seconds: number, movementRequested = false) {
+  let elapsed = 0;
+
+  while (elapsed < seconds) {
+    const step = Math.min(0.02, seconds - elapsed);
+    updateCatPosture(state, step, movementRequested);
+    elapsed += step;
+  }
+}
 
 function hasVisualVariation(buffer: Buffer) {
   const image = PNG.sync.read(buffer);
@@ -34,25 +54,83 @@ function hasVisualVariation(buffer: Buffer) {
 test('destination knock boxes allow contact but block object centers', () => {
   for (const node of navNodes.filter(({ id }) => id !== 'about')) {
     const obstacle: ObstacleRect = {
-      center: [node.position[0], node.position[2]],
+      center: [0, 0],
       halfSize: node.collisionHalfSize,
       id: `destination-${node.id}`,
     };
     const approach = {
-      x: node.position[0] - node.collisionHalfSize[0] - CAT_COLLISION_RADIUS - 0.1,
-      z: node.position[2],
+      x: -node.collisionHalfSize[0] - CAT_COLLISION_RADIUS - 0.1,
+      z: 0,
     };
     const contact = {
-      x: node.position[0] - node.collisionHalfSize[0] - CAT_COLLISION_RADIUS - 0.001,
-      z: node.position[2],
+      x: -node.collisionHalfSize[0] - CAT_COLLISION_RADIUS - 0.001,
+      z: 0,
     };
 
     expect(resolveBlockedMove(approach, contact, [obstacle])).toEqual(contact);
-    expect(resolveBlockedMove(contact, { x: node.position[0], z: node.position[2] }, [obstacle])).not.toEqual({
-      x: node.position[0],
-      z: node.position[2],
-    });
+    expect(resolveBlockedMove(contact, { x: 0, z: 0 }, [obstacle])).not.toEqual({ x: 0, z: 0 });
   }
+});
+
+test('Spotify speaker uses a wider interaction radius and remains outside link navigation', () => {
+  const speaker = navNodes.find(({ id }) => id === 'spotify');
+
+  expect(speaker).toBeDefined();
+  expect(speaker?.kind).toBe('spotify');
+  expect(speaker?.interactionRadius).toBeGreaterThan(0.58);
+  expect(speaker?.collisionHalfSize).toEqual([0.34, 0.25]);
+  expect('path' in speaker!).toBe(false);
+});
+
+test('cat starts seated, rises on load, and sits after ten seconds without movement', () => {
+  const posture = createCatPostureState();
+
+  advancePosture(posture, CAT_INITIAL_SEATED_SECONDS - 0.02);
+  expect(posture.phase).toBe('seated');
+
+  advancePosture(posture, 0.04);
+  expect(posture.phase).toBe('standingUp');
+  expect(isCatStanding(posture)).toBe(false);
+
+  advancePosture(posture, CAT_STAND_UP_SECONDS + 0.02);
+  expect(posture.phase).toBe('standing');
+
+  advancePosture(posture, CAT_IDLE_BEFORE_SITTING_SECONDS - 0.2);
+  expect(posture.phase).toBe('standing');
+
+  advancePosture(posture, 0.25);
+  expect(posture.phase).toBe('sittingDown');
+
+  advancePosture(posture, CAT_SIT_DOWN_SECONDS + 0.02);
+  expect(posture.phase).toBe('seated');
+});
+
+test('movement makes a seated cat stand before locomotion can resume', () => {
+  const posture = createCatPostureState();
+
+  updateCatPosture(posture, 0.02, true);
+  expect(posture.phase).toBe('standingUp');
+  expect(isCatStanding(posture)).toBe(false);
+
+  advancePosture(posture, CAT_STAND_UP_SECONDS + 0.02, true);
+  expect(posture.phase).toBe('standing');
+  expect(isCatStanding(posture)).toBe(true);
+});
+
+test('movement smoothly reverses an in-progress sit transition', () => {
+  const posture = createCatPostureState();
+  advancePosture(posture, CAT_INITIAL_SEATED_SECONDS + CAT_STAND_UP_SECONDS + 0.04);
+  advancePosture(posture, CAT_IDLE_BEFORE_SITTING_SECONDS + 0.04);
+  advancePosture(posture, CAT_SIT_DOWN_SECONDS / 2);
+  const partialSit = posture.sitAmount;
+
+  expect(posture.phase).toBe('sittingDown');
+  expect(partialSit).toBeGreaterThan(0);
+  expect(partialSit).toBeLessThan(1);
+
+  updateCatPosture(posture, 0.02, true);
+  expect(posture.phase).toBe('standingUp');
+  expect(posture.sitAmount).toBe(partialSit);
 });
 
 test.describe('route smoke checks', () => {
@@ -94,6 +172,24 @@ test('home scene paints a nonblank canvas and loads the cat model', async ({ pag
 });
 
 test('reduced-motion users get the destination fallback', async ({ page }) => {
+  await page.route('**/api/spotify/now-playing', (route) =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        state: 'playing',
+        fetchedAt: '2026-07-22T22:00:00.000Z',
+        item: {
+          type: 'track',
+          title: 'A test track with a long title',
+          creators: ['Test Artist'],
+          collection: 'Test Album',
+          artwork: { url: 'https://i.scdn.co/image/test-cover', width: 640, height: 640 },
+          spotifyUrl: 'https://open.spotify.com/track/test',
+        },
+      }),
+    }),
+  );
+  await page.route('https://i.scdn.co/image/test-cover', (route) => route.fulfill({ status: 404 }));
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
 
@@ -106,6 +202,13 @@ test('reduced-motion users get the destination fallback', async ({ page }) => {
   await expect(chessLink).toHaveAttribute('href', 'https://link.chess.com/play/eTlu1T');
   await expect(chessLink).toHaveAttribute('target', '_blank');
   await expect(fallback.getByRole('link', { exact: true, name: 'Synth Conductor' })).toBeVisible();
+  const spotify = fallback.getByRole('link', { name: /Listening now: A test track/ });
+  await expect(spotify).toBeVisible();
+  await expect(spotify).toHaveAttribute('href', 'https://open.spotify.com/track/test');
+  await expect(spotify.getByText('Test Artist')).toBeVisible();
+  await expect(spotify.getByText('Test Album')).toBeVisible();
+  await expect(spotify.getByRole('img', { name: 'Spotify' })).toBeVisible();
+  await expect(spotify.locator('.spotify-artwork-placeholder')).toBeVisible();
 });
 
 test('navigation menu opens, links correctly, and closes with Escape', async ({ page }) => {
@@ -122,6 +225,7 @@ test('navigation menu opens, links correctly, and closes with Escape', async ({ 
   await expect(menuButton).toHaveAccessibleName('Close navigation menu');
   await expect(navigation).toBeVisible();
   await expect(navigation.getByRole('link', { name: 'About', exact: true })).toHaveAttribute('href', '/about');
+  await expect(navigation.getByText('Spotify', { exact: true })).toHaveCount(0);
 
   await page.keyboard.press('Escape');
   await expect(navigation).toBeHidden();
