@@ -68,12 +68,10 @@ Use this checklist before accepting changes to the interactive room scene. It is
 - [ ] Pointer release, cancellation, lost capture, page hiding, window blur, route changes, and unmount all stop mobile movement.
 - [ ] The mobile dock stays above the device safe area, remains available while a popup is open, and does not overlap the header or cat at spawn.
 - [ ] Fine-pointer desktop users do not see the mobile dock, and keyboard controls continue to work unchanged.
-- [ ] Mobile Follow is the default and keeps the cat approximately the same visual size as the desktop camera.
-- [ ] Mobile Overview fits the complete room, side walls, portrait, window, shelves, cat, and destination objects on a black background at portrait and landscape aspect ratios.
-- [ ] The 44px camera control sits beside the steering dock without shifting it off center or overlapping the header, popup, or safe area.
-- [ ] Follow mode uses restrained dead-zone panning, keeps the cat fully visible at every room limit, preserves camera pitch, and does not rotate, bob, overshoot, jitter, or expose empty space outside the room.
-- [ ] Switching between Overview and Follow is smooth, does not move the cat, and does not change the active destination.
-- [ ] Resizing or rotating the viewport smoothly recalculates the Overview fit without clipping room boundaries.
+- [ ] The follow camera keeps the cat approximately the same visual size across desktop and mobile views.
+- [ ] The follow camera uses restrained dead-zone panning, keeps the cat fully visible at every room limit, preserves camera pitch, and does not rotate, bob, overshoot, or jitter.
+- [ ] At the front room limit, follow panning stops with the floor edge at or below the bottom viewport edge and never exposes empty space outside the room.
+- [ ] Resizing or rotating the viewport preserves the follow framing and floor-edge clamp.
 - [ ] The scene keeps an accessible label for the interactive room navigation area.
 - [ ] The popup announces destination changes politely and keeps a descriptive accessible label.
 - [ ] Reduced-motion fallback remains available and still exposes the same destinations if WebGL or motion is unavailable.
