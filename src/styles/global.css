@@ -299,49 +299,6 @@ a {
   outline-offset: 3px;
 }
 
-.mobile-camera-control {
-  position: fixed;
-  z-index: 15;
-  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
-  left: calc(50% + 106px);
-  width: 44px;
-  height: 44px;
-  display: none;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 50%;
-  background: rgba(10, 22, 25, 0.32);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.13),
-    0 8px 24px rgba(5, 14, 16, 0.2);
-  padding: 0;
-  color: rgba(255, 250, 240, 0.78);
-  cursor: pointer;
-  backdrop-filter: blur(14px) saturate(1.1);
-  touch-action: manipulation;
-  transition:
-    background 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease,
-    transform 150ms ease;
-}
-
-.mobile-camera-control.is-active,
-.mobile-camera-control[aria-pressed='true'] {
-  border-color: rgba(127, 198, 183, 0.74);
-  background: rgba(10, 22, 25, 0.68);
-  color: #ffffff;
-}
-
-.mobile-camera-control:active {
-  transform: scale(0.92);
-}
-
-.mobile-camera-control:focus-visible {
-  outline: 2px solid rgba(127, 198, 183, 0.82);
-  outline-offset: 3px;
-}
-
 .discovery-popup {
   position: relative;
   width: min(560px, calc(100vw - 2rem));
@@ -658,10 +615,6 @@ a {
   .mobile-controls {
     display: flex;
   }
-
-  .mobile-camera-control {
-    display: grid;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -672,8 +625,7 @@ a {
   .top-nav a,
   .discovery-popup,
   .popup-arrow,
-  .mobile-control,
-  .mobile-camera-control {
+  .mobile-control {
     transition: none;
   }
 }

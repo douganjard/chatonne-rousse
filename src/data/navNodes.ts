@@ -50,7 +50,7 @@ export const navNodes: NavNode[] = [
     kind: 'link',
     label: 'How about a game of chess?',
     navLabel: 'Chess',
-    path: 'https://link.chess.com/play/eTlu1T',
+    path: 'http://chess.com/play/douganjard',
     tagline: 'Challenge me on Chess.com.',
     position: [-1.55, 0.08, 2.05],
     collisionHalfSize: [0.3, 0.3],

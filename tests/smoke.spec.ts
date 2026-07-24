@@ -12,6 +12,10 @@ import {
   type CatPostureState,
 } from '../src/scene/catPosture';
 import { CAT_COLLISION_RADIUS, resolveBlockedMove, type ObstacleRect } from '../src/scene/collisions';
+import {
+  calculateFollowCameraFraming,
+  FOLLOW_CAMERA_DISTANCE,
+} from '../src/scene/followCamera';
 
 const routes = ['/', '/about', '/writing', '/contact', '/missing-route'];
 
@@ -133,6 +137,22 @@ test('movement smoothly reverses an in-progress sit transition', () => {
   expect(posture.sitAmount).toBe(partialSit);
 });
 
+test('follow framing keeps the bottom viewport edge inside the room floor', () => {
+  const portrait = calculateFollowCameraFraming(390 / 844);
+  const desktop = calculateFollowCameraFraming(1440 / 1000);
+  const landscape = calculateFollowCameraFraming(844 / 390);
+
+  expect(portrait.distance).toBeCloseTo(FOLLOW_CAMERA_DISTANCE);
+  expect(portrait.maxTargetX).toBeGreaterThan(2.5);
+  expect(desktop.maxTargetX).toBeGreaterThan(0);
+  expect(landscape.distance).toBeLessThan(FOLLOW_CAMERA_DISTANCE);
+  expect(landscape.maxTargetX).toBeCloseTo(0);
+
+  for (const framing of [portrait, desktop, landscape]) {
+    expect(framing.maxTargetZ).toBeGreaterThan(0);
+  }
+});
+
 test.describe('route smoke checks', () => {
   for (const route of routes) {
     test(`${route} renders without failed app assets`, async ({ page }) => {
@@ -199,7 +219,7 @@ test('reduced-motion users get the destination fallback', async ({ page }) => {
   await expect(fallback.getByRole('link', { exact: true, name: 'About' })).toBeVisible();
   const chessLink = fallback.getByRole('link', { exact: true, name: 'How about a game of chess?' });
   await expect(chessLink).toBeVisible();
-  await expect(chessLink).toHaveAttribute('href', 'https://link.chess.com/play/eTlu1T');
+  await expect(chessLink).toHaveAttribute('href', 'http://chess.com/play/douganjard');
   await expect(chessLink).toHaveAttribute('target', '_blank');
   await expect(fallback.getByRole('link', { exact: true, name: 'Synth Conductor' })).toBeVisible();
   const spotify = fallback.getByRole('link', { name: /Listening now: A test track/ });
@@ -238,8 +258,7 @@ test('touch controls stay hidden for fine-pointer desktop users', async ({ page 
   await page.goto('/');
 
   await expect(page.getByRole('group', { name: 'Cat movement controls' })).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Follow cat with camera' })).toBeHidden();
-  await expect(page.locator('.scene-wrap')).toHaveAttribute('data-camera-mode', 'follow');
+  await expect(page.getByRole('button', { name: 'Follow cat with camera' })).toHaveCount(0);
 });
 
 test('touch controls provide correctly sized hold actions on mobile', async ({ page }, testInfo) => {
@@ -250,16 +269,12 @@ test('touch controls provide correctly sized hold actions on mobile', async ({ p
   const turnLeft = controls.getByRole('button', { name: 'Turn left' });
   const moveForward = controls.getByRole('button', { name: 'Move forward' });
   const turnRight = controls.getByRole('button', { name: 'Turn right' });
-  const cameraControl = page.getByRole('button', { name: 'Follow cat with camera' });
-  const scene = page.locator('.scene-wrap');
 
   await expect(controls).toBeVisible();
   await expect(turnLeft).toBeVisible();
   await expect(moveForward).toBeVisible();
   await expect(turnRight).toBeVisible();
-  await expect(cameraControl).toBeVisible();
-  await expect(cameraControl).toHaveAttribute('aria-pressed', 'true');
-  await expect(scene).toHaveAttribute('data-camera-mode', 'follow');
+  await expect(page.getByRole('button', { name: 'Follow cat with camera' })).toHaveCount(0);
 
   for (const button of [turnLeft, moveForward, turnRight]) {
     const box = await button.boundingBox();
@@ -268,27 +283,14 @@ test('touch controls provide correctly sized hold actions on mobile', async ({ p
   }
 
   const controlsBox = await controls.boundingBox();
-  const cameraBox = await cameraControl.boundingBox();
   const headerBox = await page.locator('.site-header').boundingBox();
   const viewport = page.viewportSize();
   expect(controlsBox).not.toBeNull();
-  expect(cameraBox).not.toBeNull();
   expect(headerBox).not.toBeNull();
   expect(viewport).not.toBeNull();
   expect(controlsBox!.y).toBeGreaterThan(64);
   expect(controlsBox!.y + controlsBox!.height).toBeLessThanOrEqual(viewport!.height);
-  expect(cameraBox!.width).toBeGreaterThanOrEqual(44);
-  expect(cameraBox!.height).toBeGreaterThanOrEqual(44);
-  expect(cameraBox!.x).toBeGreaterThanOrEqual(controlsBox!.x + controlsBox!.width);
-  expect(cameraBox!.x + cameraBox!.width).toBeLessThanOrEqual(viewport!.width);
-  expect(cameraBox!.y).toBeGreaterThanOrEqual(headerBox!.y + headerBox!.height);
-
-  await cameraControl.click();
-  await expect(cameraControl).toHaveAttribute('aria-pressed', 'false');
-  await expect(scene).toHaveAttribute('data-camera-mode', 'overview');
-  await cameraControl.click();
-  await expect(cameraControl).toHaveAttribute('aria-pressed', 'true');
-  await expect(scene).toHaveAttribute('data-camera-mode', 'follow');
+  expect(Math.abs(controlsBox!.x + controlsBox!.width / 2 - viewport!.width / 2)).toBeLessThanOrEqual(1);
 
   await moveForward.dispatchEvent('pointerdown', { button: 0, pointerId: 1, pointerType: 'touch' });
   await turnLeft.dispatchEvent('pointerdown', { button: 0, pointerId: 2, pointerType: 'touch' });

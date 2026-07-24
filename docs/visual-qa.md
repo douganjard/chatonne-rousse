@@ -3,6 +3,7 @@
 ## Spotify Now Playing
 
 - Check the standing speaker at the left edge of the couch in desktop, `390x844`, and `844x390` follow views.
+- Drive the cat to the front room limit at desktop, portrait mobile, and landscape mobile sizes; the bottom viewport edge must remain covered by the floor.
 - Approach from the front and both sides; verify the cat stays visible, contacts the speaker, and opens the popup without entering the cabinet.
 - Verify long track, artist, album, episode, and podcast names remain readable without overlapping the artwork, attribution, or arrow.
 - Confirm artwork uses `object-fit: contain`, retains its source aspect ratio, and falls back to the radio icon when loading fails.
@@ -92,14 +93,13 @@ Forward + left/right: move and turn simultaneously
 
 Release each pointer outside its button, background the page, and return to confirm movement never remains stuck. The dock must stay above the device safe area and remain available while a destination popup is open.
 
-Verify both mobile camera modes:
+Verify the follow camera:
 
 ```text
-Follow: default desktop-scale cat framing that moves gently after the cat leaves the central dead zone
-Overview: complete room, side walls, portrait, window, shelves, cat, and floor destinations on a black background
+Follow: desktop-scale cat framing that moves gently after the cat leaves the central dead zone
 ```
 
-The camera button starts pressed in Follow, changes to an unpressed state in Overview, and returns smoothly to the closer framing when toggled again. Drive the cat to every room limit in Follow and confirm she remains visible with space between her and the viewport edge. The camera must not rotate with the cat, expose empty space outside the room, bob, overshoot, or jitter. Rotate between portrait and landscape in both modes and confirm reframing is smooth.
+There is no camera-mode button. Drive the cat to every room limit and confirm she remains visible with space between her and the viewport edge. At the front limit, the floor must continue through the bottom viewport edge without exposing background outside the room. The camera must not rotate with the cat, bob, overshoot, or jitter. Rotate between portrait and landscape and confirm framing remains stable.
 
 Visit each destination object:
 
@@ -127,7 +127,7 @@ For every QA pass, inspect these browser signals:
 - The home scene remains interactive after resizing from desktop to mobile and back.
 - Text does not overlap the fixed header, nav, popup, fallback grid, or content-page body copy.
 - Mobile steering controls remain within the viewport, avoid the header and centered popup, and do not obscure the cat at spawn.
-- Mobile Overview contains the complete room at every required aspect ratio; Follow keeps the cat comfortably framed without obscuring navigation UI.
+- Mobile follow framing keeps the cat comfortably visible, does not obscure navigation UI, and never exposes background below the front floor edge.
 - Focus states are visible for nav links, fallback links, and popup links.
 - Pointer and keyboard navigation both work for route links.
 

@@ -6,7 +6,11 @@ import type { NavNode } from '../data/navNodes';
 import { trackEvent } from '../lib/telemetry';
 import { SceneModel, TOON_CAT_URL } from './SceneModel';
 import { CAT_ROOM_LIMIT, CAT_START, resolveBlockedMove } from './collisions';
-import type { CameraMode } from './cameraMode';
+import {
+  calculateFollowCameraFraming,
+  FOLLOW_CAMERA_BACKWARD,
+  FOLLOW_CAMERA_TARGET,
+} from './followCamera';
 import type { MovementInput } from './movementInput';
 import {
   createCatPostureState,
@@ -22,7 +26,6 @@ import {
 
 type DiscoverySceneProps = {
   activeId: NavNode['id'] | null;
-  cameraMode: CameraMode;
   mobileInput: MutableRefObject<MovementInput>;
   nodes: NavNode[];
   onSelect: (id: NavNode['id'] | null) => void;
@@ -120,49 +123,16 @@ const DESTINATION_SPARKLE_SETTINGS = {
   spotify: { center: [0.06, 1.08, 0.27], initialDelay: 2.8, plane: 'wall', radius: 0.24 },
 } satisfies Record<NavNode['id'], SparkleSettings>;
 
-const OVERVIEW_TARGET = new THREE.Vector3(0, 0.45, 0);
-const BASE_CAMERA_POSITION = new THREE.Vector3(0, 4.9, 6.2);
-const CAMERA_BACKWARD = BASE_CAMERA_POSITION.clone().sub(OVERVIEW_TARGET).normalize();
-const CAMERA_FORWARD = CAMERA_BACKWARD.clone().negate();
-const CAMERA_RIGHT = CAMERA_FORWARD.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
-const CAMERA_UP = CAMERA_RIGHT.clone().cross(CAMERA_FORWARD).normalize();
-const BASE_CAMERA_DISTANCE = BASE_CAMERA_POSITION.distanceTo(OVERVIEW_TARGET);
-const ROOM_FRAME_MARGIN = 1.06;
-const ROOM_FRAME_POINTS = [-3.7, 3.7].flatMap((x) =>
-  [0, 3.5].flatMap((y) => [-3.7, 3.7].map((z) => new THREE.Vector3(x, y, z))),
-);
-
-function calculateOverviewDistance(aspect: number) {
-  if (aspect >= 1) return BASE_CAMERA_DISTANCE;
-
-  const verticalTangent = Math.tan(THREE.MathUtils.degToRad(43 / 2));
-  const horizontalTangent = verticalTangent * Math.max(aspect, 0.3);
-
-  return ROOM_FRAME_POINTS.reduce((requiredDistance, point) => {
-    const relativeX = point.x - OVERVIEW_TARGET.x;
-    const relativeY = point.y - OVERVIEW_TARGET.y;
-    const relativeZ = point.z - OVERVIEW_TARGET.z;
-    const cameraX = relativeX * CAMERA_RIGHT.x + relativeY * CAMERA_RIGHT.y + relativeZ * CAMERA_RIGHT.z;
-    const cameraY = relativeX * CAMERA_UP.x + relativeY * CAMERA_UP.y + relativeZ * CAMERA_UP.z;
-    const cameraDepth =
-      relativeX * CAMERA_FORWARD.x + relativeY * CAMERA_FORWARD.y + relativeZ * CAMERA_FORWARD.z;
-    const horizontalDistance = (Math.abs(cameraX) * ROOM_FRAME_MARGIN) / horizontalTangent - cameraDepth;
-    const verticalDistance = (Math.abs(cameraY) * ROOM_FRAME_MARGIN) / verticalTangent - cameraDepth;
-
-    return Math.max(requiredDistance, horizontalDistance, verticalDistance);
-  }, BASE_CAMERA_DISTANCE);
-}
-
 function applyDeadZone(value: number, radius: number) {
   if (Math.abs(value) <= radius) return 0;
   return Math.sign(value) * (Math.abs(value) - radius);
 }
 
-export function DiscoveryScene({ activeId, cameraMode, mobileInput, nodes, onSelect }: DiscoverySceneProps) {
+export function DiscoveryScene({ activeId, mobileInput, nodes, onSelect }: DiscoverySceneProps) {
   const catPosition = useRef(new THREE.Vector3(...CAT_START));
 
   return (
-    <div className="scene-wrap" data-camera-mode={cameraMode} aria-label="Interactive room navigation">
+    <div className="scene-wrap" aria-label="Interactive room navigation">
       <Canvas
         camera={{ position: [0, 4.9, 6.2], fov: 43 }}
         dpr={[1, 1.75]}
@@ -171,7 +141,7 @@ export function DiscoveryScene({ activeId, cameraMode, mobileInput, nodes, onSel
         shadows
       >
         <Suspense fallback={null}>
-          <color attach="background" args={[cameraMode === 'overview' ? '#000000' : '#d9b892']} />
+          <color attach="background" args={['#d9b892']} />
           <ambientLight intensity={0.58} />
           <hemisphereLight args={['#f2deb3', '#243028', 0.42]} />
           <directionalLight
@@ -183,7 +153,7 @@ export function DiscoveryScene({ activeId, cameraMode, mobileInput, nodes, onSel
           />
           <pointLight color="#ffae66" intensity={2.2} distance={5.7} position={[-3.15, 2.05, -0.15]} />
           <pointLight color="#ffca8a" intensity={1.4} distance={3.8} position={[3.05, 1.72, -3.0]} />
-          <CameraRig catPosition={catPosition} mode={cameraMode} />
+          <CameraRig catPosition={catPosition} />
           <Room />
           <Furniture />
           {nodes.map((node) => (
@@ -203,46 +173,47 @@ function StaticGroup({
   return <group position={position}>{children}</group>;
 }
 
-function CameraRig({ catPosition, mode }: { catPosition: MutableRefObject<THREE.Vector3>; mode: CameraMode }) {
+function CameraRig({ catPosition }: { catPosition: MutableRefObject<THREE.Vector3> }) {
   const { size } = useThree();
   const initialized = useRef(false);
   const lastAspect = useRef(0);
-  const overviewDistance = useRef(BASE_CAMERA_DISTANCE);
-  const currentDistance = useRef(BASE_CAMERA_DISTANCE);
-  const currentTarget = useRef(OVERVIEW_TARGET.clone());
-  const desiredTarget = useRef(OVERVIEW_TARGET.clone());
+  const framing = useRef(calculateFollowCameraFraming(1));
+  const currentTarget = useRef(FOLLOW_CAMERA_TARGET.clone());
+  const desiredTarget = useRef(FOLLOW_CAMERA_TARGET.clone());
 
   useFrame(({ camera }, delta) => {
     const aspect = size.width / Math.max(size.height, 1);
     if (Math.abs(aspect - lastAspect.current) > 0.001) {
       lastAspect.current = aspect;
-      overviewDistance.current = calculateOverviewDistance(aspect);
+      framing.current = calculateFollowCameraFraming(aspect);
     }
 
-    desiredTarget.current.copy(OVERVIEW_TARGET);
-    let desiredDistance = overviewDistance.current;
-
-    if (mode === 'follow') {
-      const horizontalPan = THREE.MathUtils.clamp(applyDeadZone(catPosition.current.x, 0.3) * 0.95, -2.65, 2.65);
-      const depthPan = THREE.MathUtils.clamp(applyDeadZone(catPosition.current.z, 0.5) * 0.62, -1.85, 1.85);
-      desiredTarget.current.x += horizontalPan;
-      desiredTarget.current.z += depthPan;
-      desiredDistance = BASE_CAMERA_DISTANCE;
-    }
+    desiredTarget.current.copy(FOLLOW_CAMERA_TARGET);
+    const horizontalPan = THREE.MathUtils.clamp(
+      applyDeadZone(catPosition.current.x, 0.3) * 0.95,
+      -framing.current.maxTargetX,
+      framing.current.maxTargetX,
+    );
+    const depthPan = THREE.MathUtils.clamp(
+      applyDeadZone(catPosition.current.z, 0.5) * 0.62,
+      -1.85,
+      framing.current.maxTargetZ,
+    );
+    desiredTarget.current.x += horizontalPan;
+    desiredTarget.current.z += depthPan;
 
     if (!initialized.current) {
       initialized.current = true;
       currentTarget.current.copy(desiredTarget.current);
-      currentDistance.current = desiredDistance;
     } else {
-      const cameraDamping = mode === 'follow' ? 7 : 3.2;
-      currentTarget.current.x = THREE.MathUtils.damp(currentTarget.current.x, desiredTarget.current.x, cameraDamping, delta);
-      currentTarget.current.y = THREE.MathUtils.damp(currentTarget.current.y, desiredTarget.current.y, cameraDamping, delta);
-      currentTarget.current.z = THREE.MathUtils.damp(currentTarget.current.z, desiredTarget.current.z, cameraDamping, delta);
-      currentDistance.current = THREE.MathUtils.damp(currentDistance.current, desiredDistance, cameraDamping, delta);
+      currentTarget.current.x = THREE.MathUtils.damp(currentTarget.current.x, desiredTarget.current.x, 7, delta);
+      currentTarget.current.y = THREE.MathUtils.damp(currentTarget.current.y, desiredTarget.current.y, 7, delta);
+      currentTarget.current.z = THREE.MathUtils.damp(currentTarget.current.z, desiredTarget.current.z, 7, delta);
     }
 
-    camera.position.copy(currentTarget.current).addScaledVector(CAMERA_BACKWARD, currentDistance.current);
+    camera.position
+      .copy(currentTarget.current)
+      .addScaledVector(FOLLOW_CAMERA_BACKWARD, framing.current.distance);
     camera.lookAt(currentTarget.current);
   });
 
@@ -356,8 +327,15 @@ function Baseboards() {
 }
 
 function BuiltInShelves() {
-  const shelfRows = [-1.12, -0.48, 0.16, 0.8, 1.4];
-  const shelfColumns = [-2.48, -1.56, -0.62, 0.34, 1.28, 2.22];
+  const shelfFloors = [-1.145, -0.505, 0.135];
+  const shelfBays = [
+    { center: -2.49, width: 0.48 },
+    { center: -1.65, width: 0.98 },
+    { center: -0.55, width: 0.98 },
+    { center: 0.55, width: 0.98 },
+    { center: 1.65, width: 0.98 },
+    { center: 2.49, width: 0.48 },
+  ];
   const shelfMaterial = useMemo(() => createWoodMaterial('shelf'), []);
 
   return (
@@ -382,9 +360,16 @@ function BuiltInShelves() {
             <primitive attach="material" object={shelfMaterial} />
           </mesh>
         ))}
-        {shelfRows.flatMap((y, row) =>
-          shelfColumns.map((x, column) => (
-            <ShelfCell key={`${row}-${column}`} position={[x, y, 0.22]} seed={row * 7 + column} />
+        {shelfFloors.flatMap((y, row) =>
+          shelfBays.map(({ center, width }, column) => (
+            <ShelfCell
+              key={`${row}-${column}`}
+              column={column}
+              position={[center, y, 0.18]}
+              row={row}
+              seed={row * 17 + column * 11}
+              slotWidth={width}
+            />
           )),
         )}
       </group>
@@ -392,66 +377,105 @@ function BuiltInShelves() {
   );
 }
 
-function ShelfCell({ position, seed }: { position: [number, number, number]; seed: number }) {
+function seededUnit(seed: number, salt: number) {
+  const value = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function ShelfCell({
+  column,
+  position,
+  row,
+  seed,
+  slotWidth,
+}: {
+  column: number;
+  position: [number, number, number];
+  row: number;
+  seed: number;
+  slotWidth: number;
+}) {
   const colors = ['#d0b88d', '#1f2522', '#b99468', '#f4dfbd', '#7b4a28', '#46563d', '#8e6f49'];
-  const pattern = (seed * 7 + 3) % 12;
-  const offsetX = ((seed % 3) - 1) * 0.035;
-  const isQuietCell = pattern === 0 || pattern === 4 || pattern === 8;
+  const cellPatterns = [
+    [7, 1, 2, 4, 11, 9],
+    [9, 5, 3, 14, 2, 8],
+    [0, 11, 6, 1, 13, 12],
+  ];
+  const pattern = cellPatterns[row]?.[column] ?? Math.floor(seededUnit(seed, 2) * 16);
+  const sideBay = slotWidth < 0.6;
+  const maxOffset = sideBay ? 0.035 : 0.18;
+  const offsetX = (seededUnit(seed, 1) - 0.5) * maxOffset;
+  const objectScale = sideBay ? 0.82 : 1;
 
   return (
     <group position={position}>
-      {pattern === 0 && <ShelfTray position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 0 && <ShelfTray position={[offsetX, 0, 0.005]} scale={objectScale} seed={seed} />}
       {pattern === 1 && (
-        <ShelfBooks count={4 + (seed % 3)} lean={seed % 2 === 0} position={[-0.32 + offsetX, 0, 0]} seed={seed} />
+        <ShelfBooks
+          count={sideBay ? 3 : 5 + (seed % 2)}
+          lean={seed % 2 === 0}
+          position={[sideBay ? -0.1 + offsetX : -0.34 + offsetX, 0, 0]}
+          scale={objectScale}
+          seed={seed}
+        />
       )}
       {pattern === 2 && (
         <BookStack
           colors={[colors[seed % colors.length], colors[(seed + 2) % colors.length], colors[(seed + 5) % colors.length]]}
-          position={[-0.02 + offsetX, 0, 0.01]}
+          position={[offsetX, 0, 0.005]}
+          scale={objectScale}
           seed={seed}
         />
       )}
-      {pattern === 3 && (
+      {pattern === 3 && !sideBay && (
         <>
-          <ShelfBooks count={5} position={[-0.34, 0, 0]} seed={seed} />
-          <ShelfBowl position={[0.15, 0, 0.015]} seed={seed} />
+          <ShelfBooks count={5} position={[-0.34 + offsetX, 0, 0]} seed={seed} />
+          <ShelfBowl position={[0.18 + offsetX, 0, 0.005]} seed={seed} />
         </>
       )}
-      {pattern === 4 && <ShelfFoldedTextiles position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 4 && <ShelfFoldedTextiles position={[offsetX, 0, 0.005]} scale={objectScale} seed={seed} />}
       {pattern === 5 && (
         <>
-          <ShelfVase position={[-0.14 + offsetX, 0, 0.01]} seed={seed} />
-          <BookStack colors={[colors[(seed + 1) % colors.length], colors[(seed + 4) % colors.length]]} position={[0.18, 0, 0]} seed={seed} />
+          <ShelfVase position={[-0.18 + offsetX, 0, 0]} scale={objectScale} seed={seed} />
+          <BookStack colors={[colors[(seed + 1) % colors.length], colors[(seed + 4) % colors.length]]} position={[0.16 + offsetX, 0, 0]} scale={0.92} seed={seed} />
         </>
       )}
-      {pattern === 6 && (
+      {pattern === 6 && !sideBay && (
         <>
-          <ShelfFramedArt position={[-0.2 + offsetX, 0, 0.015]} seed={seed} />
+          <ShelfFramedArt position={[-0.2 + offsetX, 0, 0.005]} seed={seed} />
           {seed % 2 === 0 ? (
-            <SceneModel color="#496c48" position={[0.22, 0, 0.01]} scale={0.48} url="/models/kenney/plantSmall1.glb" />
+            <SceneModel color="#496c48" position={[0.22 + offsetX, 0, 0]} scale={0.42} url="/models/kenney/plantSmall1.glb" />
           ) : (
-            <BookStack colors={[colors[seed % colors.length], colors[(seed + 3) % colors.length]]} position={[0.18, 0, 0]} seed={seed} />
+            <BookStack colors={[colors[seed % colors.length], colors[(seed + 3) % colors.length]]} position={[0.18 + offsetX, 0, 0]} scale={0.86} seed={seed} />
           )}
         </>
       )}
-      {pattern === 7 && <ShelfBasket position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
-      {pattern === 8 && <ShelfBowl position={[0.02 + offsetX, 0, 0.015]} seed={seed} />}
+      {pattern === 7 && <ShelfBasket position={[offsetX, 0, 0.005]} scale={objectScale} seed={seed} />}
+      {pattern === 8 && <ShelfBowl position={[offsetX, 0, 0.005]} scale={sideBay ? 0.88 : 1} seed={seed} />}
       {pattern === 9 && (
-        <ShelfBooks count={3 + (seed % 2)} lean position={[-0.24 + offsetX, 0, 0]} seed={seed} />
+        <ShelfBooks count={sideBay ? 2 : 3 + (seed % 2)} lean position={[sideBay ? -0.08 + offsetX : -0.24 + offsetX, 0, 0]} scale={objectScale} seed={seed} />
       )}
-      {pattern === 10 && (
+      {pattern === 10 && !sideBay && (
         <>
-          <ShelfVase position={[-0.2 + offsetX, 0, 0.01]} seed={seed} />
-          <ShelfBowl position={[0.18, 0, 0.015]} seed={seed + 2} />
+          <ShelfVase position={[-0.2 + offsetX, 0, 0]} seed={seed} />
+          <ShelfBowl position={[0.18 + offsetX, 0, 0.005]} seed={seed + 2} />
         </>
       )}
-      {pattern === 11 && (
+      {pattern === 11 && !sideBay && (
         <>
-          <BookStack colors={[colors[seed % colors.length], colors[(seed + 3) % colors.length]]} position={[-0.12, 0, 0]} seed={seed} />
-          <ShelfBooks count={3} position={[0.15, 0, 0]} seed={seed + 2} />
+          <BookStack colors={[colors[seed % colors.length], colors[(seed + 3) % colors.length]]} position={[-0.16 + offsetX, 0, 0]} scale={0.88} seed={seed} />
+          <ShelfBooks count={3} position={[0.12 + offsetX, 0, 0]} scale={0.9} seed={seed + 2} />
         </>
       )}
-      {!isQuietCell && seed % 11 === 0 && <ShelfTray position={[0.3, 0, 0.02]} seed={seed + 1} />}
+      {pattern === 12 && <ShelfCandles position={[offsetX, 0, 0.005]} scale={objectScale} seed={seed} />}
+      {pattern === 13 && <ShelfVasePair position={[offsetX, 0, 0]} scale={objectScale} seed={seed} />}
+      {pattern === 14 && !sideBay && (
+        <>
+          <ShelfBooks count={4} lean position={[-0.32 + offsetX, 0, 0]} seed={seed} />
+          <ShelfSculpture position={[0.2 + offsetX, 0, 0.005]} seed={seed} />
+        </>
+      )}
+      {pattern === 15 && !sideBay && <ShelfTray position={[offsetX, 0, 0.005]} scale={0.9} seed={seed + 1} />}
     </group>
   );
 }
@@ -460,17 +484,19 @@ function ShelfBooks({
   count,
   lean = false,
   position,
+  scale = 1,
   seed,
 }: {
   count: number;
   lean?: boolean;
   position: [number, number, number];
+  scale?: number;
   seed: number;
 }) {
   const colors = ['#1f2522', '#b99468', '#d0b88d', '#7b4a28', '#46563d', '#f4dfbd', '#9b5537'];
 
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       {Array.from({ length: count }, (_, index) => {
         const height = 0.22 + ((seed + index) % 5) * 0.038;
         const width = 0.04 + ((seed + index) % 3) * 0.01;
@@ -491,14 +517,16 @@ function ShelfBooks({
 function BookStack({
   colors,
   position,
+  scale = 1,
   seed = 0,
 }: {
   colors: string[];
   position: [number, number, number];
+  scale?: number;
   seed?: number;
 }) {
   return (
-    <group position={position} rotation={[0, 0, seed % 2 ? 0.025 : -0.02]}>
+    <group position={position} rotation={[0, 0, seed % 2 ? 0.025 : -0.02]} scale={scale}>
       {colors.map((color, index) => (
         <mesh key={`${color}-${index}`} position={[0, 0.015 + index * 0.035, 0]} rotation={[0, 0, index % 2 ? 0.02 : -0.015]}>
           <boxGeometry args={[0.42 - index * 0.05, 0.03, 0.11 + (index % 2) * 0.02]} />
@@ -509,11 +537,11 @@ function BookStack({
   );
 }
 
-function ShelfBowl({ position, seed }: { position: [number, number, number]; seed: number }) {
+function ShelfBowl({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
   const colors = ['#d0b88d', '#2f332f', '#b99468', '#f1dbc0'];
 
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       <mesh castShadow position={[0, 0.055, 0]} scale={[1.25, 0.42, 1]}>
         <sphereGeometry args={[0.11, 22, 10]} />
         <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.7} />
@@ -526,9 +554,9 @@ function ShelfBowl({ position, seed }: { position: [number, number, number]; see
   );
 }
 
-function ShelfBasket({ position, seed }: { position: [number, number, number]; seed: number }) {
+function ShelfBasket({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       <mesh castShadow receiveShadow position={[0, 0.07, 0]}>
         <boxGeometry args={[0.44, 0.14, 0.18]} />
         <meshStandardMaterial color={seed % 2 ? '#a87945' : '#b8905f'} roughness={0.92} />
@@ -543,11 +571,11 @@ function ShelfBasket({ position, seed }: { position: [number, number, number]; s
   );
 }
 
-function ShelfFoldedTextiles({ position, seed }: { position: [number, number, number]; seed: number }) {
+function ShelfFoldedTextiles({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
   const colors = ['#d9c9b0', '#f1dfbd', '#bfa98d'];
 
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       {Array.from({ length: 3 }, (_, index) => (
         <RoundedBox key={index} castShadow args={[0.44 - index * 0.035, 0.048, 0.18]} radius={0.025} position={[0, 0.026 + index * 0.05, 0]}>
           <meshStandardMaterial color={colors[(seed + index) % colors.length]} roughness={0.96} />
@@ -574,11 +602,11 @@ function ShelfFramedArt({ position, seed }: { position: [number, number, number]
   );
 }
 
-function ShelfVase({ position, seed }: { position: [number, number, number]; seed: number }) {
+function ShelfVase({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
   const colors = ['#d0b88d', '#f4dfbd', '#6f5a43', '#2f332f'];
 
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       <mesh castShadow position={[0, 0.075, 0]}>
         <cylinderGeometry args={[0.052, 0.075, 0.15, 18]} />
         <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.78} />
@@ -591,11 +619,11 @@ function ShelfVase({ position, seed }: { position: [number, number, number]; see
   );
 }
 
-function ShelfTray({ position, seed }: { position: [number, number, number]; seed: number }) {
+function ShelfTray({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
   const colors = ['#7b4a28', '#2f332f', '#b99468'];
 
   return (
-    <group position={position}>
+    <group position={position} scale={scale}>
       <mesh castShadow position={[0, 0.025, 0]}>
         <boxGeometry args={[0.46, 0.05, 0.15]} />
         <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.78} />
@@ -603,6 +631,59 @@ function ShelfTray({ position, seed }: { position: [number, number, number]; see
       <mesh castShadow position={[0, 0.065, 0]} scale={[1.6, 0.35, 0.8]}>
         <sphereGeometry args={[0.12, 20, 8]} />
         <meshStandardMaterial color={colors[(seed + 1) % colors.length]} roughness={0.84} />
+      </mesh>
+    </group>
+  );
+}
+
+function ShelfCandles({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
+  const candleColors = ['#f4dfbd', '#d9c9b0', '#c78b6c'];
+
+  return (
+    <group position={position} scale={scale}>
+      <mesh castShadow receiveShadow position={[0, 0.012, 0.005]}>
+        <cylinderGeometry args={[0.13, 0.13, 0.024, 24]} />
+        <meshStandardMaterial color="#d0b88d" roughness={0.82} />
+      </mesh>
+      {[-0.08, 0.015, 0.095].map((x, index) => {
+        const height = 0.12 + ((seed + index) % 3) * 0.035;
+
+        return (
+          <mesh key={x} castShadow position={[x, 0.024 + height / 2, 0]}>
+            <cylinderGeometry args={[0.025, 0.028, height, 16]} />
+            <meshStandardMaterial color={candleColors[(seed + index) % candleColors.length]} roughness={0.88} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function ShelfVasePair({ position, scale = 1, seed }: { position: [number, number, number]; scale?: number; seed: number }) {
+  return (
+    <group position={position} scale={scale}>
+      <ShelfVase position={[-0.08, 0, 0]} scale={0.88} seed={seed} />
+      <ShelfVase position={[0.09, 0, 0.018]} scale={0.66} seed={seed + 3} />
+    </group>
+  );
+}
+
+function ShelfSculpture({ position, seed }: { position: [number, number, number]; seed: number }) {
+  const colors = ['#2f332f', '#6f5a43', '#b99468'];
+
+  return (
+    <group position={position} rotation={[0, 0, seed % 2 ? 0.08 : -0.06]}>
+      <mesh castShadow position={[0, 0.018, 0]}>
+        <boxGeometry args={[0.19, 0.036, 0.13]} />
+        <meshStandardMaterial color="#1f2522" roughness={0.78} />
+      </mesh>
+      <mesh castShadow position={[-0.035, 0.085, 0]} rotation={[0.18, 0.12, 0.22]}>
+        <dodecahedronGeometry args={[0.07, 0]} />
+        <meshStandardMaterial color={colors[seed % colors.length]} roughness={0.86} />
+      </mesh>
+      <mesh castShadow position={[0.065, 0.075, 0.015]} rotation={[-0.12, 0.32, -0.18]}>
+        <boxGeometry args={[0.08, 0.1, 0.06]} />
+        <meshStandardMaterial color={colors[(seed + 1) % colors.length]} roughness={0.82} />
       </mesh>
     </group>
   );
@@ -1318,8 +1399,10 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
   useFrame(({ clock }, delta) => {
     const walk = motion.current.speed;
     const turn = motion.current.turn;
-    const sitAmount = THREE.MathUtils.smoothstep(motion.current.posture.sitAmount, 0, 1);
+    const posture = motion.current.posture;
+    const sitAmount = THREE.MathUtils.smoothstep(posture.sitAmount, 0, 1);
     const isPosturing = sitAmount > 0.001;
+    const seatedStill = posture.phase === 'seated' && sitAmount > 0.995;
     const turnAmount = Math.abs(turn);
     const gaitAmount = Math.max(walk, turnAmount * 0.58);
     const idleAmount = 1 - THREE.MathUtils.clamp(gaitAmount * 1.8, 0, 1);
@@ -1327,7 +1410,8 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
 
     if (action) {
       const targetTimeScale = gaitAmount > 0.035 ? 0.48 + walk * 0.92 + turnAmount * 0.38 : 0;
-      action.paused = gaitAmount < 0.025 && action.timeScale < 0.03;
+      action.enabled = !seatedStill;
+      action.paused = seatedStill || (gaitAmount < 0.025 && action.timeScale < 0.03);
       action.timeScale = THREE.MathUtils.damp(action.timeScale, targetTimeScale, 8, delta);
       action.weight = 1 - sitAmount;
     }
@@ -1379,9 +1463,18 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
 
     if (isPosturing) {
       postureBones.current.forEach(({ object, offset, rotation }) => {
-        object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + offset[0] * sitAmount, 14, delta);
-        object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y + offset[1] * sitAmount, 14, delta);
-        object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z + offset[2] * sitAmount, 14, delta);
+        const targetX = rotation.x + offset[0] * sitAmount;
+        const targetY = rotation.y + offset[1] * sitAmount;
+        const targetZ = rotation.z + offset[2] * sitAmount;
+
+        if (seatedStill) {
+          object.rotation.set(targetX, targetY, targetZ);
+          return;
+        }
+
+        object.rotation.x = THREE.MathUtils.damp(object.rotation.x, targetX, 14, delta);
+        object.rotation.y = THREE.MathUtils.damp(object.rotation.y, targetY, 14, delta);
+        object.rotation.z = THREE.MathUtils.damp(object.rotation.z, targetZ, 14, delta);
       });
     }
 
