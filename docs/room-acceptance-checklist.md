@@ -41,14 +41,15 @@ Use this checklist before accepting changes to the interactive room scene. It is
 - [ ] Sliding movement still works when the cat approaches an obstacle diagonally; the cat should not get stuck against simple furniture edges.
 - [ ] Room-edge clamping prevents the cat from passing through or behind walls.
 - [ ] No obstacle blocks the initial cat spawn or the direct approach path to any destination object.
-- [ ] Destination collision boxes let the cat touch the portrait, chessboard, MIDI keyboard, and speaker but prevent her center from passing through them.
+- [ ] Destination collision boxes let the cat touch the portrait, chessboard, Goodreads shelf section, MIDI keyboard, and speaker but prevent her center from passing through them.
 - [ ] The chessboard and MIDI keyboard occupy distinct left and right floor zones with clear walking space between them.
 - [ ] The cat can rotate freely beside each obstacle and can back away using normal controls.
 - [ ] Physics bodies remain fixed for static furniture, room pieces, and destination objects; the cat remains the only kinematic moving body.
 
 ## Destination Popup Reachability
 
-- [ ] All active destination objects are visible from the default camera angle: Framed portrait, Chess board, and MIDI keyboard.
+- [ ] All active destination objects are visible from the default camera angle: Framed portrait, Chess board, Goodreads shelf section, and MIDI keyboard.
+- [ ] Goodreads occupies the lower bay immediately right of the shelf centerline, links to Doug's Goodreads profile, and does not appear in the hamburger menu.
 - [ ] Each destination object can be reached by walking the cat within popup range without crossing blocked furniture.
 - [ ] The popup appears only when the cat is close to the intended destination object and clears when the cat walks away.
 - [ ] The popup content matches the active destination object, destination label, tagline, accent, and link target.

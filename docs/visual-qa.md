@@ -106,6 +106,7 @@ Visit each destination object:
 ```text
 About: Framed portrait
 How about a game of chess?: Chess board
+Goodreads: Lower bookshelf collection
 Synth Conductor: MIDI keyboard
 ```
 

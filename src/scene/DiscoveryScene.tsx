@@ -76,7 +76,7 @@ type SparkleState = {
 type SparkleSettings = {
   center: [number, number, number];
   initialDelay: number;
-  plane: 'floor' | 'wall';
+  plane: 'floor' | 'side-wall' | 'wall';
   radius: number;
 };
 
@@ -119,6 +119,7 @@ const CAT_SIT_BONE_OFFSETS = {
 const DESTINATION_SPARKLE_SETTINGS = {
   about: { center: [0, 0.04, 0.04], initialDelay: 1.2, plane: 'wall', radius: 0.12 },
   chess: { center: [0, 0.13, 0], initialDelay: 3.7, plane: 'floor', radius: 0.2 },
+  goodreads: { center: [-0.2, 0.2, 0], initialDelay: 5.6, plane: 'side-wall', radius: 0.18 },
   synth: { center: [0, 0.14, 0], initialDelay: 4.8, plane: 'floor', radius: 0.18 },
   spotify: { center: [0.06, 1.08, 0.27], initialDelay: 2.8, plane: 'wall', radius: 0.24 },
 } satisfies Record<NavNode['id'], SparkleSettings>;
@@ -361,16 +362,18 @@ function BuiltInShelves() {
           </mesh>
         ))}
         {shelfFloors.flatMap((y, row) =>
-          shelfBays.map(({ center, width }, column) => (
-            <ShelfCell
-              key={`${row}-${column}`}
-              column={column}
-              position={[center, y, 0.18]}
-              row={row}
-              seed={row * 17 + column * 11}
-              slotWidth={width}
-            />
-          )),
+          shelfBays.map(({ center, width }, column) =>
+            row === 0 && column === 3 ? null : (
+              <ShelfCell
+                key={`${row}-${column}`}
+                column={column}
+                position={[center, y, 0.18]}
+                row={row}
+                seed={row * 17 + column * 11}
+                slotWidth={width}
+              />
+            ),
+          ),
         )}
       </group>
     </StaticGroup>
@@ -838,6 +841,7 @@ function DestinationObject({ activeId, node }: DestinationObjectProps) {
       <group>
         {node.id === 'about' && <FramedPortrait active={isActive} />}
         {node.id === 'chess' && <ChessBoard color={node.accent} active={isActive} />}
+        {node.id === 'goodreads' && <GoodreadsShelfSection active={isActive} color={node.accent} />}
         {node.id === 'synth' && <MidiKeyboard color={node.accent} active={isActive} />}
         {node.id === 'spotify' && <StandingSpeaker active={isActive} />}
         <InteractiveSparkle
@@ -849,6 +853,56 @@ function DestinationObject({ activeId, node }: DestinationObjectProps) {
         />
       </group>
     </StaticGroup>
+  );
+}
+
+function GoodreadsShelfSection({ active, color }: { active: boolean; color: string }) {
+  const books = [
+    { color: '#f1dfbd', height: 0.31, width: 0.07, tilt: -0.035 },
+    { color: '#46563d', height: 0.36, width: 0.065, tilt: 0.018 },
+    { color: '#b99468', height: 0.29, width: 0.075, tilt: -0.012 },
+    { color, height: 0.39, width: 0.08, tilt: 0.03 },
+    { color: '#7b4a28', height: 0.33, width: 0.068, tilt: -0.024 },
+    { color: '#d0b88d', height: 0.27, width: 0.072, tilt: 0.02 },
+  ];
+
+  return (
+    <group rotation={[0, -Math.PI / 2, 0]} scale={active ? 1.04 : 1}>
+      <mesh castShadow receiveShadow position={[0, 0.018, 0.02]}>
+        <boxGeometry args={[0.78, 0.035, 0.19]} />
+        <meshStandardMaterial color="#4f321f" roughness={0.78} />
+      </mesh>
+      <group position={[-0.235, 0.035, 0.02]}>
+        {books.map((book, index) => {
+          const x = books.slice(0, index).reduce((offset, item) => offset + item.width + 0.014, 0);
+
+          return (
+            <mesh
+              key={`${book.color}-${index}`}
+              castShadow
+              position={[x, book.height / 2, 0]}
+              rotation={[0, 0, book.tilt]}
+            >
+              <boxGeometry args={[book.width, book.height, 0.145]} />
+              <meshStandardMaterial
+                color={book.color}
+                emissive={active ? color : '#000000'}
+                emissiveIntensity={active ? 0.12 : 0}
+                roughness={0.74}
+              />
+            </mesh>
+          );
+        })}
+      </group>
+      <mesh castShadow position={[0.29, 0.12, 0.025]} rotation={[0, 0, -0.06]}>
+        <boxGeometry args={[0.22, 0.045, 0.15]} />
+        <meshStandardMaterial color="#1f2522" roughness={0.76} />
+      </mesh>
+      <mesh castShadow position={[0.3, 0.17, 0.025]} rotation={[0, 0, 0.035]}>
+        <boxGeometry args={[0.2, 0.045, 0.15]} />
+        <meshStandardMaterial color="#d0b88d" roughness={0.76} />
+      </mesh>
+    </group>
   );
 }
 
@@ -914,7 +968,7 @@ function InteractiveSparkle({
   active: boolean;
   center: [number, number, number];
   initialDelay: number;
-  plane: 'floor' | 'wall';
+  plane: 'floor' | 'side-wall' | 'wall';
   radius: number;
 }) {
   const billboard = useRef<THREE.Group>(null);
@@ -964,6 +1018,10 @@ function InteractiveSparkle({
         state.x = center[0] + Math.cos(angle) * distance;
         state.y = center[1] + Math.sin(angle) * distance * 0.82;
         state.z = center[2] + (Math.random() - 0.5) * 0.03;
+      } else if (plane === 'side-wall') {
+        state.x = center[0] + (Math.random() - 0.5) * 0.03;
+        state.y = center[1] + Math.sin(angle) * distance * 0.82;
+        state.z = center[2] + Math.cos(angle) * distance;
       } else {
         state.x = center[0] + Math.cos(angle) * distance;
         state.y = center[1] + (Math.random() - 0.5) * 0.07;
