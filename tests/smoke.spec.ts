@@ -86,6 +86,18 @@ test('Spotify speaker uses a wider interaction radius and remains outside link n
   expect('path' in speaker!).toBe(false);
 });
 
+test('Goodreads is an external shelf destination excluded from the header menu', () => {
+  const goodreads = navNodes.find(({ id }) => id === 'goodreads');
+
+  expect(goodreads).toMatchObject({
+    kind: 'link',
+    path: 'http://goodreads.com/douganjard',
+    external: true,
+    showInMenu: false,
+    position: [3.4, 0.445, 0.4],
+  });
+});
+
 test('cat starts seated, rises on load, and sits after ten seconds without movement', () => {
   const posture = createCatPostureState();
 
@@ -221,6 +233,9 @@ test('reduced-motion users get the destination fallback', async ({ page }) => {
   await expect(chessLink).toBeVisible();
   await expect(chessLink).toHaveAttribute('href', 'http://chess.com/play/douganjard');
   await expect(chessLink).toHaveAttribute('target', '_blank');
+  const goodreadsLink = fallback.getByRole('link', { exact: true, name: 'Library' });
+  await expect(goodreadsLink).toHaveAttribute('href', 'http://goodreads.com/douganjard');
+  await expect(goodreadsLink).toHaveAttribute('target', '_blank');
   await expect(fallback.getByRole('link', { exact: true, name: 'Synth Conductor' })).toBeVisible();
   const spotify = fallback.getByRole('link', { name: /Listening now: A test track/ });
   await expect(spotify).toBeVisible();
@@ -245,6 +260,7 @@ test('navigation menu opens, links correctly, and closes with Escape', async ({ 
   await expect(menuButton).toHaveAccessibleName('Close navigation menu');
   await expect(navigation).toBeVisible();
   await expect(navigation.getByRole('link', { name: 'About', exact: true })).toHaveAttribute('href', '/about');
+  await expect(navigation.getByText('Library', { exact: true })).toHaveCount(0);
   await expect(navigation.getByText('Spotify', { exact: true })).toHaveCount(0);
 
   await page.keyboard.press('Escape');

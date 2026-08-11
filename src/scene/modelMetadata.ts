@@ -44,6 +44,7 @@ export const roomLayoutMetadata = {
   portals: [
     { id: 'about', objectLabel: 'Framed portrait', position: [1.82, 0.84, -2.62] as Vec3, collisionHalfSize: [0.14, 0.1] as Vec2 },
     { id: 'chess', objectLabel: 'Chess board', position: [-1.55, 0.08, 2.05] as Vec3, collisionHalfSize: [0.3, 0.3] as Vec2 },
+    { id: 'goodreads', objectLabel: 'Lower bookshelf collection', position: [3.4, 0.445, 0.4] as Vec3, collisionHalfSize: [0.12, 0.38] as Vec2 },
     { id: 'synth', objectLabel: 'MIDI keyboard', position: [1.55, 0.07, 1.55] as Vec3, collisionHalfSize: [0.32, 0.12] as Vec2 },
     { id: 'spotify', objectLabel: 'Standing speaker', position: [-2.72, 0, -2.78] as Vec3, collisionHalfSize: [0.34, 0.25] as Vec2 },
   ],
@@ -115,6 +116,7 @@ export const roomLayoutMetadata = {
     { id: 'right-side-table', center: [1.82, -2.8] as Vec2, halfSize: [0.42, 0.46] as Vec2 },
     { id: 'coffee-table', center: [0, -1.3] as Vec2, halfSize: [0.78, 0.42] as Vec2 },
     { id: 'destination-spotify', center: [-2.72, -2.78] as Vec2, halfSize: [0.34, 0.25] as Vec2 },
+    { id: 'destination-goodreads', center: [3.4, 0.4] as Vec2, halfSize: [0.12, 0.38] as Vec2 },
     { id: 'floor-lamp', center: [3.05, -3.05] as Vec2, halfSize: [0.32, 0.32] as Vec2 },
     { id: 'bookshelf', center: [3.5, -0.15] as Vec2, halfSize: [0.18, 2.92] as Vec2 },
     { id: 'left-window-plant', center: [-2.82, 1.5] as Vec2, halfSize: [0.55, 0.55] as Vec2 },
