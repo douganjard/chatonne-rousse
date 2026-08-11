@@ -1,8 +1,8 @@
 import type { LucideIcon } from 'lucide-react';
-import { Crown, KeyboardMusic, Radio, UserRound } from 'lucide-react';
+import { BookOpen, Crown, KeyboardMusic, Radio, UserRound } from 'lucide-react';
 
 type BaseNavNode = {
-  id: 'about' | 'chess' | 'synth' | 'spotify';
+  id: 'about' | 'chess' | 'goodreads' | 'synth' | 'spotify';
   label: string;
   navLabel?: string;
   tagline: string;
@@ -12,6 +12,7 @@ type BaseNavNode = {
   accent: string;
   Icon: LucideIcon;
   objectLabel: string;
+  showInMenu?: boolean;
 };
 
 export type LinkNavNode = BaseNavNode & {
@@ -59,6 +60,22 @@ export const navNodes: NavNode[] = [
     external: true,
     Icon: Crown,
     objectLabel: 'Chess board',
+    showInMenu: false,
+  },
+  {
+    id: 'goodreads',
+    kind: 'link',
+    label: 'Library',
+    path: 'http://goodreads.com/douganjard',
+    tagline: 'See what I am reading on Goodreads.',
+    position: [3.4, 0.445, 0.4],
+    collisionHalfSize: [0.12, 0.38],
+    interactionRadius: 0.78,
+    accent: '#a7865c',
+    external: true,
+    Icon: BookOpen,
+    objectLabel: 'Lower bookshelf collection',
+    showInMenu: false,
   },
   {
     id: 'synth',

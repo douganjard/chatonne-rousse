@@ -5,7 +5,7 @@ import { isLinkNavNode, navNodes, type LinkNavNode } from '../data/navNodes';
 import { trackPageView } from '../lib/telemetry';
 
 const headerNavNodes = navNodes.filter(
-  (node): node is LinkNavNode => isLinkNavNode(node) && node.id !== 'chess',
+  (node): node is LinkNavNode => isLinkNavNode(node) && node.showInMenu !== false,
 );
 
 export function SiteLayout() {

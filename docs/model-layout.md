@@ -29,6 +29,7 @@ Structured values are also mirrored in `src/scene/modelMetadata.ts`. `DiscoveryS
 | --- | --- | --- | --- |
 | `about` | Framed portrait | `[1.82, 0.84, -2.62]` | `[0.14, 0.1]` |
 | `chess` | Chess board | `[-1.55, 0.08, 2.05]` | `[0.3, 0.3]` |
+| `goodreads` | Lower bookshelf collection | `[3.4, 0.445, 0.4]` | `[0.12, 0.38]` |
 | `synth` | MIDI keyboard | `[1.55, 0.07, 1.55]` | `[0.32, 0.12]` |
 | `spotify` | Standing speaker | `[-2.72, 0, -2.78]` | `[0.34, 0.25]` |
 
@@ -74,6 +75,7 @@ The GLB also includes `thighBL_03`, `thighBR_026`, and foot IK helper objects (`
 | Left side table | `[-1.82, 0.66, -2.62]` | `sideTableDrawers.glb` at `[0.1, -0.66, 0.26]`, rotation y `Math.PI / 2`, scale `1.72`. | `left-side-table` |
 | Right side table | `[1.82, 0.66, -2.62]` | `sideTableDrawers.glb` at `[-0.1, -0.66, -0.62]`, rotation y `-Math.PI / 2`, scale `1.72`. | `right-side-table` |
 | Spotify speaker | `[-2.72, 0, -2.78]` | Procedural walnut cabinet, black baffle, two drivers, and steel stand. | Destination obstacle `destination-spotify` |
+| Goodreads shelf section | `[3.4, 0.445, 0.4]` | Procedural book cluster in the lower bay immediately right of the shelf centerline. | Destination obstacle `destination-goodreads`; overlaps the existing bookshelf edge intentionally. |
 | Left-window floor plant | `[-2.82, 0.5, 1.5]` | Larger restored `pot_large.glb`, bush/tall foliage layers, and repeated elevated foliage for extra height. | `left-window-plant` |
 | Floor lamp | `[3.05, 0.9, -3.05]` | `lampRoundFloor.glb` at `[-0.09, -0.9, 0.09]`, scale `1.82`; point light at `[0, 0.92, 0]`. | `floor-lamp` |
 | Bookshelf | `[3.58, 1.59, -0.15]`, rotation y `-Math.PI / 2` | Procedural shelf frame, books, decor, and occasional `plantSmall1.glb`. | `bookshelf` |
@@ -99,6 +101,7 @@ After applying the `1.72` scale and rotations, the visual centers land near `[-1
 | `left-side-table` | `[-1.82, -2.8]` | `[0.42, 0.46]` | Left side table group at `[-1.82, 0.66, -2.62]`; visual center is depth-corrected to about z `-2.80`. |
 | `right-side-table` | `[1.82, -2.8]` | `[0.42, 0.46]` | Right side table group at `[1.82, 0.66, -2.62]`; visual center is depth-corrected to about z `-2.80`. |
 | `coffee-table` | `[0, -1.3]` | `[0.78, 0.42]` | Coffee table visual center after its model-origin correction. |
+| `destination-goodreads` | `[3.4, 0.4]` | `[0.12, 0.38]` | Lower-middle bookshelf book cluster; the bookshelf blocker remains the primary wall-edge collision. |
 | `floor-lamp` | `[3.05, -3.05]` | `[0.32, 0.32]` | Floor lamp group at `[3.05, 0.9, -3.05]`. |
 | `bookshelf` | `[3.5, -0.15]` | `[0.18, 2.92]` | Right-wall built-in shelves; narrowed to the shelf depth against the right wall so open floor remains reachable. |
 | `left-window-plant` | `[-2.82, 1.5]` | `[0.55, 0.55]` | Larger left-window floor plant group at `[-2.82, 0.5, 1.5]`. |
