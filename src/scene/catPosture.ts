@@ -12,6 +12,25 @@ export const CAT_INITIAL_SEATED_SECONDS = 0.7;
 export const CAT_IDLE_BEFORE_SITTING_SECONDS = 10;
 export const CAT_SIT_DOWN_SECONDS = 0.72;
 export const CAT_STAND_UP_SECONDS = 0.66;
+export const CAT_MAX_POSTURE_STEP = 1 / 20;
+
+export function getCatSitBlend(sitAmount: number) {
+  const amount = Math.min(Math.max(sitAmount, 0), 1);
+  return amount * amount * amount * (amount * (amount * 6 - 15) + 10);
+}
+
+export function getCatPostureRotation(
+  base: readonly [number, number, number],
+  offset: readonly [number, number, number],
+  sitAmount: number,
+): [number, number, number] {
+  const blend = getCatSitBlend(sitAmount);
+  return [
+    base[0] + offset[0] * blend,
+    base[1] + offset[1] * blend,
+    base[2] + offset[2] * blend,
+  ];
+}
 
 export function createCatPostureState(): CatPostureState {
   return {
@@ -28,7 +47,7 @@ export function isCatStanding(state: CatPostureState) {
 }
 
 export function updateCatPosture(state: CatPostureState, delta: number, movementRequested: boolean) {
-  const step = Math.min(Math.max(delta, 0), 0.1);
+  const step = Math.min(Math.max(delta, 0), CAT_MAX_POSTURE_STEP);
   state.phaseElapsed += step;
 
   if (state.phase === 'seated') {

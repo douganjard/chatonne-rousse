@@ -82,7 +82,11 @@ Use this checklist before accepting changes to the interactive room scene. It is
 - [ ] Wood surfaces keep visible grain or bump detail on the floor, trim, shelves, and tables.
 - [ ] Fabric surfaces keep woven texture and non-metallic roughness on the sofa, pillows, and rug.
 - [ ] Brass and lamp materials retain controlled metalness and roughness; they should not read as flat yellow plastic or mirror chrome.
-- [ ] Cat fur keeps its orange texture/bump treatment and remains lit enough to read against the room floor.
+- [ ] Tapping or clicking the cat toggles once between light orange (`#FFAA33`) and buff (`#DAA06D`) coats without interrupting movement or animation.
+- [ ] Both coat colors preserve the source texture's pale markings and dark facial details and remain readable against the room floor.
+- [ ] The selected cat coat persists after a refresh, while invalid stored values fall back to light orange.
+- [ ] Walking and turning keep a continuous gait without leg shaking, alternating bone offsets, or visible position jumps after a slow frame.
+- [ ] Sitting and standing use continuous eased motion without bone shaking, endpoint snaps, or a frozen walk pose bleeding into the seated pose.
 - [ ] Window materials keep warm emissive/translucent qualities without washing out adjacent objects.
 - [ ] Texture changes do not create severe aliasing, flicker, or repeating seams visible from the default camera.
 
