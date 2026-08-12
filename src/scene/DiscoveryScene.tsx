@@ -1,10 +1,12 @@
-import { Canvas, useFrame, useLoader, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useLoader, useThree, type ThreeEvent } from '@react-three/fiber';
 import { RoundedBox, useAnimations, useGLTF } from '@react-three/drei';
 import { Suspense, useEffect, useMemo, useRef, type MutableRefObject, type PropsWithChildren } from 'react';
 import * as THREE from 'three';
 import type { NavNode } from '../data/navNodes';
 import { trackEvent } from '../lib/telemetry';
 import { SceneModel, TOON_CAT_URL } from './SceneModel';
+import { recolorCatCoatPixels, type CatCoat } from './catCoat';
+import { clampCatFrameDelta, updateCatLocomotion } from './catMotion';
 import { CAT_ROOM_LIMIT, CAT_START, resolveBlockedMove } from './collisions';
 import {
   calculateFollowCameraFraming,
@@ -14,6 +16,8 @@ import {
 import type { MovementInput } from './movementInput';
 import {
   createCatPostureState,
+  getCatPostureRotation,
+  getCatSitBlend,
   isCatStanding,
   updateCatPosture,
   type CatPostureState,
@@ -26,8 +30,10 @@ import {
 
 type DiscoverySceneProps = {
   activeId: NavNode['id'] | null;
+  catCoat: CatCoat;
   mobileInput: MutableRefObject<MovementInput>;
   nodes: NavNode[];
+  onCatCoatToggle: () => void;
   onSelect: (id: NavNode['id'] | null) => void;
 };
 
@@ -39,7 +45,6 @@ type KeyState = {
 };
 
 type CatMotionState = {
-  gaitPhase: number;
   move: number;
   posture: CatPostureState;
   speed: number;
@@ -49,13 +54,6 @@ type CatMotionState = {
 type CatBonePose = {
   object: THREE.Object3D;
   rotation: THREE.Euler;
-};
-
-type CatLegPose = CatBonePose & {
-  lastOffset: THREE.Euler;
-  phase: number;
-  side: -1 | 1;
-  stride: number;
 };
 
 type CatPostureBonePose = CatBonePose & {
@@ -79,21 +77,6 @@ type SparkleSettings = {
   plane: 'floor' | 'side-wall' | 'wall';
   radius: number;
 };
-
-const CAT_LEG_BONES = [
-  { name: 'legupperFL_014', phase: 0, side: -1, stride: 0.1 },
-  { name: 'leglowerFL_015', phase: Math.PI * 0.16, side: -1, stride: -0.075 },
-  { name: 'footFL_016', phase: Math.PI * 0.34, side: -1, stride: 0.045 },
-  { name: 'legupperFR_024', phase: Math.PI, side: 1, stride: 0.1 },
-  { name: 'leglowerFR_00', phase: Math.PI * 1.16, side: 1, stride: -0.075 },
-  { name: 'footFR_025', phase: Math.PI * 1.34, side: 1, stride: 0.045 },
-  { name: 'legupperBL_04', phase: Math.PI, side: -1, stride: 0.085 },
-  { name: 'leglowerBL_05', phase: Math.PI * 1.18, side: -1, stride: -0.07 },
-  { name: 'footBL_06', phase: Math.PI * 1.36, side: -1, stride: 0.04 },
-  { name: 'legupperBR_027', phase: 0, side: 1, stride: 0.085 },
-  { name: 'leglowerBR_028', phase: Math.PI * 0.18, side: 1, stride: -0.07 },
-  { name: 'footBR_029', phase: Math.PI * 0.36, side: 1, stride: 0.04 },
-] satisfies Array<{ name: string; phase: number; side: -1 | 1; stride: number }>;
 
 const CAT_SIT_BONE_OFFSETS = {
   torso_02: [-0.72, 0, 0],
@@ -129,13 +112,21 @@ function applyDeadZone(value: number, radius: number) {
   return Math.sign(value) * (Math.abs(value) - radius);
 }
 
-export function DiscoveryScene({ activeId, mobileInput, nodes, onSelect }: DiscoverySceneProps) {
+export function DiscoveryScene({
+  activeId,
+  catCoat,
+  mobileInput,
+  nodes,
+  onCatCoatToggle,
+  onSelect,
+}: DiscoverySceneProps) {
   const catPosition = useRef(new THREE.Vector3(...CAT_START));
 
   return (
     <div className="scene-wrap" aria-label="Interactive room navigation">
       <Canvas
         camera={{ position: [0, 4.9, 6.2], fov: 43 }}
+        data-cat-coat={catCoat}
         dpr={[1, 1.75]}
         onCreated={() => trackEvent('scene_loaded')}
         onError={() => trackEvent('webgl_failed')}
@@ -160,7 +151,14 @@ export function DiscoveryScene({ activeId, mobileInput, nodes, onSelect }: Disco
           {nodes.map((node) => (
             <DestinationObject key={node.id} activeId={activeId} node={node} />
           ))}
-          <CatController catPosition={catPosition} mobileInput={mobileInput} nodes={nodes} onSelect={onSelect} />
+          <CatController
+            catCoat={catCoat}
+            catPosition={catPosition}
+            mobileInput={mobileInput}
+            nodes={nodes}
+            onCatCoatToggle={onCatCoatToggle}
+            onSelect={onSelect}
+          />
         </Suspense>
       </Canvas>
     </div>
@@ -328,7 +326,11 @@ function Baseboards() {
 }
 
 function BuiltInShelves() {
-  const shelfFloors = [-1.145, -0.505, 0.135];
+  const shelfFloors = [-1.145, -0.505, 0.135, 0.775];
+  const shelfDepth = 0.48;
+  const shelfBackZ = -0.2;
+  const shelfBoardZ = 0.02;
+  const shelfItemZ = 0.17;
   const shelfBays = [
     { center: -2.49, width: 0.48 },
     { center: -1.65, width: 0.98 },
@@ -338,27 +340,46 @@ function BuiltInShelves() {
     { center: 2.49, width: 0.48 },
   ];
   const shelfMaterial = useMemo(() => createWoodMaterial('shelf'), []);
+  const innerDividerMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: '#5b351f',
+        roughness: 0.84,
+      }),
+    [],
+  );
 
   return (
     <StaticGroup>
       <group position={[3.58, 1.59, -0.15]} rotation={[0, -Math.PI / 2, 0]}>
-        <RoundedBox castShadow receiveShadow args={[5.85, 3.18, 0.22]} radius={0.025}>
+        <mesh castShadow receiveShadow position={[0, 0, shelfBackZ]}>
+          <boxGeometry args={[5.85, 3.18, 0.08]} />
           <primitive attach="material" object={shelfMaterial} />
-        </RoundedBox>
-        <mesh position={[0, 0, 0.13]}>
-          <boxGeometry args={[5.58, 2.92, 0.06]} />
+        </mesh>
+        {[-1.55, 1.55].map((y) => (
+          <RoundedBox key={`outer-horizontal-${y}`} castShadow receiveShadow args={[5.85, 0.13, shelfDepth]} radius={0.035} position={[0, y, shelfBoardZ]}>
+            <primitive attach="material" object={shelfMaterial} />
+          </RoundedBox>
+        ))}
+        {[-2.86, 2.86].map((x) => (
+          <RoundedBox key={`outer-vertical-${x}`} castShadow receiveShadow args={[0.13, 3.18, shelfDepth]} radius={0.035} position={[x, 0, shelfBoardZ]}>
+            <primitive attach="material" object={shelfMaterial} />
+          </RoundedBox>
+        ))}
+        <mesh position={[0, 0, shelfBackZ + 0.045]}>
+          <boxGeometry args={[5.55, 2.9, 0.02]} />
           <primitive attach="material" object={shelfMaterial} />
         </mesh>
         {[-2.2, -1.1, 0, 1.1, 2.2].map((x) => (
-          <mesh key={x} position={[x, 0, 0.14]}>
-            <boxGeometry args={[0.06, 2.96, 0.1]} />
-            <primitive attach="material" object={shelfMaterial} />
+          <mesh key={x} castShadow receiveShadow position={[x, 0, shelfBoardZ]}>
+            <boxGeometry args={[0.07, 2.96, shelfDepth]} />
+            <primitive attach="material" object={innerDividerMaterial} />
           </mesh>
         ))}
         {[-1.18, -0.54, 0.1, 0.74, 1.34].map((y) => (
-          <mesh key={y} position={[0, y, 0.15]}>
-            <boxGeometry args={[5.52, 0.055, 0.1]} />
-            <primitive attach="material" object={shelfMaterial} />
+          <mesh key={y} castShadow receiveShadow position={[0, y, shelfBoardZ]}>
+            <boxGeometry args={[5.52, 0.065, shelfDepth]} />
+            <primitive attach="material" object={innerDividerMaterial} />
           </mesh>
         ))}
         {shelfFloors.flatMap((y, row) =>
@@ -367,7 +388,7 @@ function BuiltInShelves() {
               <ShelfCell
                 key={`${row}-${column}`}
                 column={column}
-                position={[center, y, 0.18]}
+                position={[center, y, shelfItemZ]}
                 row={row}
                 seed={row * 17 + column * 11}
                 slotWidth={width}
@@ -403,6 +424,7 @@ function ShelfCell({
     [7, 1, 2, 4, 11, 9],
     [9, 5, 3, 14, 2, 8],
     [0, 11, 6, 1, 13, 12],
+    [8, 13, 2, 6, 10, 12],
   ];
   const pattern = cellPatterns[row]?.[column] ?? Math.floor(seededUnit(seed, 2) * 16);
   const sideBay = slotWidth < 0.6;
@@ -1246,18 +1268,19 @@ function MidiKeyboard({ active, color }: { active: boolean; color: string }) {
 }
 
 function CatController({
+  catCoat,
   catPosition,
   mobileInput,
   nodes,
+  onCatCoatToggle,
   onSelect,
-}: Pick<DiscoverySceneProps, 'mobileInput' | 'nodes' | 'onSelect'> & {
+}: Pick<DiscoverySceneProps, 'catCoat' | 'mobileInput' | 'nodes' | 'onCatCoatToggle' | 'onSelect'> & {
   catPosition: MutableRefObject<THREE.Vector3>;
 }) {
   const body = useRef<THREE.Group>(null);
   const keys = useRef<KeyState>({ forward: false, backward: false, left: false, right: false });
   const facing = useRef(0);
   const motion = useRef<CatMotionState>({
-    gaitPhase: 0,
     move: 0,
     posture: createCatPostureState(),
     speed: 0,
@@ -1309,25 +1332,23 @@ function CatController({
     const requestedMove = Number(keys.current.forward || mobileInput.current.forward);
     const movementRequested = requestedMove !== 0 || requestedTurn !== 0;
     motion.current.posture ??= createCatPostureState();
-    updateCatPosture(motion.current.posture, delta, movementRequested);
+    const frameDelta = clampCatFrameDelta(delta);
+    updateCatPosture(motion.current.posture, frameDelta, movementRequested);
     const standing = isCatStanding(motion.current.posture);
     const turnInput = standing ? requestedTurn : 0;
     const moveInput = standing ? requestedMove : 0;
     const turnSpeed = 2.35;
     const maxSpeed = 1.38;
     const targetMove = moveInput;
-    const targetSpeed = Math.abs(moveInput);
 
-    motion.current.turn = THREE.MathUtils.damp(motion.current.turn, turnInput, 8, delta);
-    motion.current.move = THREE.MathUtils.damp(motion.current.move, targetMove, 7, delta);
-    motion.current.speed = THREE.MathUtils.damp(motion.current.speed, targetSpeed, 7, delta);
-    motion.current.gaitPhase += delta * (2.2 + Math.max(motion.current.speed, Math.abs(motion.current.turn) * 0.68) * 6.4);
-    facing.current += motion.current.turn * turnSpeed * delta;
+    updateCatLocomotion(motion.current, targetMove, turnInput, frameDelta);
+    facing.current += motion.current.turn * turnSpeed * frameDelta;
 
-    const direction = new THREE.Vector3(-Math.sin(facing.current), 0, -Math.cos(facing.current));
+    const directionX = -Math.sin(facing.current);
+    const directionZ = -Math.cos(facing.current);
     const proposed = {
-      x: THREE.MathUtils.clamp(translation.x + direction.x * maxSpeed * motion.current.move * delta, -CAT_ROOM_LIMIT, CAT_ROOM_LIMIT),
-      z: THREE.MathUtils.clamp(translation.z + direction.z * maxSpeed * motion.current.move * delta, -CAT_ROOM_LIMIT, CAT_ROOM_LIMIT),
+      x: THREE.MathUtils.clamp(translation.x + directionX * maxSpeed * motion.current.move * frameDelta, -CAT_ROOM_LIMIT, CAT_ROOM_LIMIT),
+      z: THREE.MathUtils.clamp(translation.z + directionZ * maxSpeed * motion.current.move * frameDelta, -CAT_ROOM_LIMIT, CAT_ROOM_LIMIT),
     };
     const resolved = resolveBlockedMove({ x: translation.x, z: translation.z }, proposed, destinationObstacles);
     const wasBlocked =
@@ -1352,14 +1373,15 @@ function CatController({
     body.current.rotation.set(0, facing.current, 0);
     catPosition.current.set(next.x, next.y, next.z);
 
-    const nearest = nodes
-      .map((node) => ({
-        node,
-        distance: Math.hypot(node.position[0] - next.x, node.position[2] - next.z),
-      }))
-      .sort((a, b) => a.distance - b.distance)[0];
-
-    const nextActiveId = nearest && nearest.distance < nearest.node.interactionRadius ? nearest.node.id : null;
+    let nextActiveId: NavNode['id'] | null = null;
+    let nearestDistance = Infinity;
+    for (const node of nodes) {
+      const distance = Math.hypot(node.position[0] - next.x, node.position[2] - next.z);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nextActiveId = distance < node.interactionRadius ? node.id : null;
+      }
+    }
 
     if (nextActiveId !== selectedRef.current) {
       selectedRef.current = nextActiveId;
@@ -1369,28 +1391,79 @@ function CatController({
 
   return (
     <group ref={body} position={CAT_START}>
-      <OrangeCat motion={motion} />
+      <Cat coat={catCoat} motion={motion} onCoatToggle={onCatCoatToggle} />
     </group>
   );
 }
 
-function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> }) {
+type CatMaterialState = {
+  canvasContext: CanvasRenderingContext2D;
+  coatTexture: THREE.Texture;
+  material: THREE.MeshStandardMaterial;
+  mesh: THREE.Mesh;
+  originalMaterial: THREE.Material | THREE.Material[];
+  sourcePixels: Uint8ClampedArray;
+};
+
+function Cat({
+  coat,
+  motion,
+  onCoatToggle,
+}: {
+  coat: CatCoat;
+  motion: React.MutableRefObject<CatMotionState>;
+  onCoatToggle: () => void;
+}) {
   const gltf = useGLTF(TOON_CAT_URL);
   const model = gltf.scene;
   const { actions } = useAnimations(gltf.animations, model);
+  const action = useMemo(() => actions.Scene ?? Object.values(actions)[0], [actions]);
   const root = useRef<THREE.Group>(null);
   const tailBones = useRef<CatBonePose[]>([]);
-  const legBones = useRef<CatLegPose[]>([]);
   const postureBones = useRef<CatPostureBonePose[]>([]);
   const headBone = useRef<CatBonePose | null>(null);
   const earBones = useRef<CatBonePose[]>([]);
+  const materialState = useRef<CatMaterialState | null>(null);
+  const pointerIsOver = useRef(false);
+  const previousCursor = useRef('');
 
   useEffect(() => {
     model.traverse((object) => {
       if ('isMesh' in object && object.isMesh) {
-        object.castShadow = true;
-        object.receiveShadow = true;
-        object.frustumCulled = false;
+        const mesh = object as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+
+        if (!materialState.current && !Array.isArray(mesh.material) && mesh.material instanceof THREE.MeshStandardMaterial && mesh.material.map) {
+          const sourceTexture = mesh.material.map;
+          const image = sourceTexture.image as CanvasImageSource & { height: number; width: number };
+          const canvas = document.createElement('canvas');
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const canvasContext = canvas.getContext('2d');
+
+          if (canvasContext) {
+            canvasContext.drawImage(image, 0, 0, canvas.width, canvas.height);
+            const sourcePixels = canvasContext.getImageData(0, 0, canvas.width, canvas.height).data;
+            const coatTexture = sourceTexture.clone();
+            coatTexture.image = canvas;
+            coatTexture.needsUpdate = true;
+            const material = mesh.material.clone();
+            material.map = coatTexture;
+            material.needsUpdate = true;
+            const originalMaterial = mesh.material;
+            mesh.material = material;
+            materialState.current = {
+              canvasContext,
+              coatTexture,
+              material,
+              mesh,
+              originalMaterial,
+              sourcePixels,
+            };
+          }
+        }
       }
     });
 
@@ -1401,20 +1474,6 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
         object,
         rotation: object.rotation.clone(),
       }));
-
-    legBones.current = CAT_LEG_BONES.map(({ name, phase, side, stride }) => {
-      const object = model.getObjectByName(name);
-      if (!object) return null;
-
-      return {
-        object,
-        phase,
-        rotation: object.rotation.clone(),
-        side,
-        stride,
-        lastOffset: new THREE.Euler(),
-      };
-    }).filter((pose): pose is CatLegPose => Boolean(pose));
 
     postureBones.current = Object.entries(CAT_SIT_BONE_OFFSETS)
       .map(([name, offset]) => {
@@ -1439,10 +1498,55 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
         object,
         rotation: object.rotation.clone(),
       }));
+
+    return () => {
+      const state = materialState.current;
+      if (!state) return;
+      state.mesh.material = state.originalMaterial;
+      state.material.dispose();
+      state.coatTexture.dispose();
+      materialState.current = null;
+    };
   }, [model]);
 
   useEffect(() => {
-    const action = actions.Scene ?? Object.values(actions)[0];
+    const state = materialState.current;
+    if (!state) return;
+    const { canvasContext, coatTexture, sourcePixels } = state;
+    const pixels = recolorCatCoatPixels(sourcePixels, coat);
+    const imageData = new ImageData(pixels, canvasContext.canvas.width, canvasContext.canvas.height);
+    canvasContext.putImageData(imageData, 0, 0);
+    coatTexture.needsUpdate = true;
+  }, [coat]);
+
+  useEffect(
+    () => () => {
+      if (document.body.style.cursor === 'pointer') {
+        document.body.style.cursor = previousCursor.current;
+      }
+    },
+    [],
+  );
+
+  const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    event.stopPropagation();
+    onCoatToggle();
+  };
+
+  const handlePointerOver = (event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    if (pointerIsOver.current) return;
+    pointerIsOver.current = true;
+    previousCursor.current = document.body.style.cursor;
+    document.body.style.cursor = 'pointer';
+  };
+
+  const handlePointerOut = () => {
+    pointerIsOver.current = false;
+    document.body.style.cursor = previousCursor.current;
+  };
+
+  useEffect(() => {
     if (!action) return;
 
     action.reset();
@@ -1452,87 +1556,49 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
     return () => {
       action.stop();
     };
-  }, [actions]);
+  }, [action]);
 
   useFrame(({ clock }, delta) => {
+    const frameDelta = clampCatFrameDelta(delta);
     const walk = motion.current.speed;
     const turn = motion.current.turn;
     const posture = motion.current.posture;
-    const sitAmount = THREE.MathUtils.smoothstep(posture.sitAmount, 0, 1);
-    const isPosturing = sitAmount > 0.001;
+    const sitAmount = getCatSitBlend(posture.sitAmount);
+    const postureOwnsBones = posture.phase !== 'standing';
     const seatedStill = posture.phase === 'seated' && sitAmount > 0.995;
     const turnAmount = Math.abs(turn);
     const gaitAmount = Math.max(walk, turnAmount * 0.58);
     const idleAmount = 1 - THREE.MathUtils.clamp(gaitAmount * 1.8, 0, 1);
-    const action = actions.Scene ?? Object.values(actions)[0];
 
     if (action) {
-      const targetTimeScale = gaitAmount > 0.035 ? 0.48 + walk * 0.92 + turnAmount * 0.38 : 0;
-      action.enabled = !seatedStill;
-      action.paused = seatedStill || (gaitAmount < 0.025 && action.timeScale < 0.03);
-      action.timeScale = THREE.MathUtils.damp(action.timeScale, targetTimeScale, 8, delta);
-      action.weight = 1 - sitAmount;
+      const gaitActive = posture.phase === 'standing' && gaitAmount > 0.025;
+      const targetTimeScale = gaitActive ? 0.48 + walk * 0.92 + turnAmount * 0.38 : 0;
+      const targetWeight = gaitActive ? 1 : 0;
+      action.enabled = true;
+      action.paused = seatedStill || (!gaitActive && action.timeScale < 0.03 && action.weight < 0.03);
+      action.timeScale = THREE.MathUtils.damp(action.timeScale, targetTimeScale, 8, frameDelta);
+      action.weight = THREE.MathUtils.damp(action.weight, targetWeight, 11, frameDelta);
     }
 
     if (root.current) {
       const breath = Math.sin(clock.elapsedTime * 1.45) * idleAmount;
-      root.current.rotation.z = THREE.MathUtils.damp(root.current.rotation.z, -turn * 0.09, 8, delta);
-      root.current.rotation.x = THREE.MathUtils.damp(root.current.rotation.x, walk * 0.04 + turnAmount * 0.012, 8, delta);
-      root.current.position.y = THREE.MathUtils.damp(
-        root.current.position.y,
-        -0.31 - sitAmount * 0.2 + breath * 0.005,
-        8,
-        delta,
-      );
+      root.current.rotation.z = THREE.MathUtils.damp(root.current.rotation.z, -turn * 0.09, 8, frameDelta);
+      root.current.rotation.x = THREE.MathUtils.damp(root.current.rotation.x, walk * 0.04 + turnAmount * 0.012, 8, frameDelta);
+      root.current.position.y = -0.31 - sitAmount * 0.2 + breath * 0.005;
       root.current.scale.setScalar(0.0019 * (1 + breath * 0.006));
     }
 
-    legBones.current.forEach((bone) => {
-      bone.object.rotation.x -= bone.lastOffset.x;
-      bone.object.rotation.y -= bone.lastOffset.y;
-      bone.object.rotation.z -= bone.lastOffset.z;
-      bone.lastOffset.set(0, 0, 0);
+    // The source animation exclusively owns leg rotations. Layering Euler offsets here
+    // causes the mixer and procedural gait to overwrite one another on alternating frames.
 
-      if (isPosturing) return;
-
-      if (gaitAmount < 0.16) {
-        const settleRate = 5 + idleAmount * 7;
-        bone.object.rotation.x = THREE.MathUtils.damp(bone.object.rotation.x, bone.rotation.x, settleRate, delta);
-        bone.object.rotation.y = THREE.MathUtils.damp(bone.object.rotation.y, bone.rotation.y, settleRate, delta);
-        bone.object.rotation.z = THREE.MathUtils.damp(bone.object.rotation.z, bone.rotation.z, settleRate, delta);
-      }
-
-      if (gaitAmount > 0.035) {
-        const phase = motion.current.gaitPhase + bone.phase;
-        const step = Math.sin(phase);
-        const lift = Math.max(0, Math.sin(phase + Math.PI * 0.2));
-        const outerStepBoost = 1 + Math.max(0, turn * bone.side) * 0.38;
-        const strideAmount = THREE.MathUtils.clamp(gaitAmount, 0, 1) * outerStepBoost;
-        const xOffset = step * bone.stride * strideAmount;
-        const yOffset = turn * bone.side * 0.016 * strideAmount;
-        const zOffset = lift * 0.018 * strideAmount;
-
-        bone.object.rotation.x += xOffset;
-        bone.object.rotation.y += yOffset;
-        bone.object.rotation.z += zOffset;
-        bone.lastOffset.set(xOffset, yOffset, zOffset);
-      }
-    });
-
-    if (isPosturing) {
+    if (postureOwnsBones) {
       postureBones.current.forEach(({ object, offset, rotation }) => {
-        const targetX = rotation.x + offset[0] * sitAmount;
-        const targetY = rotation.y + offset[1] * sitAmount;
-        const targetZ = rotation.z + offset[2] * sitAmount;
-
-        if (seatedStill) {
-          object.rotation.set(targetX, targetY, targetZ);
-          return;
-        }
-
-        object.rotation.x = THREE.MathUtils.damp(object.rotation.x, targetX, 14, delta);
-        object.rotation.y = THREE.MathUtils.damp(object.rotation.y, targetY, 14, delta);
-        object.rotation.z = THREE.MathUtils.damp(object.rotation.z, targetZ, 14, delta);
+        const [x, y, z] = getCatPostureRotation(
+          [rotation.x, rotation.y, rotation.z],
+          offset,
+          posture.sitAmount,
+        );
+        object.rotation.set(x, y, z);
       });
     }
 
@@ -1540,16 +1606,16 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       const { object, rotation } = headBone.current;
       const idleLook = Math.sin(clock.elapsedTime * 0.72) * 0.055 * idleAmount;
       const idleNod = Math.sin(clock.elapsedTime * 1.15 + 0.8) * 0.025 * idleAmount;
-      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + idleNod - sitAmount * 0.08, 4, delta);
-      object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y + idleLook - turn * 0.04, 4, delta);
-      object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z - turn * 0.018, 4, delta);
+      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + idleNod - sitAmount * 0.08, 4, frameDelta);
+      object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y + idleLook - turn * 0.04, 4, frameDelta);
+      object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z - turn * 0.018, 4, frameDelta);
     }
 
     earBones.current.forEach(({ object, rotation }, index) => {
       const earTwitch = Math.pow(Math.max(0, Math.sin(clock.elapsedTime * 0.88 + index * 1.9)), 14) * idleAmount;
-      object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z + (index === 0 ? 1 : -1) * earTwitch * 0.045, 7, delta);
-      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + earTwitch * 0.025, 7, delta);
-      object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y, 7, delta);
+      object.rotation.z = THREE.MathUtils.damp(object.rotation.z, rotation.z + (index === 0 ? 1 : -1) * earTwitch * 0.045, 7, frameDelta);
+      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, rotation.x + earTwitch * 0.025, 7, frameDelta);
+      object.rotation.y = THREE.MathUtils.damp(object.rotation.y, rotation.y, 7, frameDelta);
     });
 
     tailBones.current.forEach(({ object, rotation }, index) => {
@@ -1561,14 +1627,22 @@ function OrangeCat({ motion }: { motion: React.MutableRefObject<CatMotionState> 
       const targetY = rotation.y + wag * (0.095 + idleAmount * 0.052 + walk * 0.018) + attentiveSway * 0.03 * chain + turn * 0.068;
       const targetZ = rotation.z + wave * 0.018 * chain - turn * 0.02 * chain;
 
-      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, targetX, 9, delta);
-      object.rotation.y = THREE.MathUtils.damp(object.rotation.y, targetY, 9, delta);
-      object.rotation.z = THREE.MathUtils.damp(object.rotation.z, targetZ, 9, delta);
+      object.rotation.x = THREE.MathUtils.damp(object.rotation.x, targetX, 9, frameDelta);
+      object.rotation.y = THREE.MathUtils.damp(object.rotation.y, targetY, 9, frameDelta);
+      object.rotation.z = THREE.MathUtils.damp(object.rotation.z, targetZ, 9, frameDelta);
     });
   });
 
   return (
-    <group ref={root} position={[0, -0.31, 0]} rotation={[0, Math.PI, 0]} scale={0.0019}>
+    <group
+      ref={root}
+      position={[0, -0.31, 0]}
+      rotation={[0, Math.PI, 0]}
+      scale={0.0019}
+      onClick={handleClick}
+      onPointerOut={handlePointerOut}
+      onPointerOver={handlePointerOver}
+    >
       <primitive object={model} />
     </group>
   );

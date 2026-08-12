@@ -4,9 +4,12 @@ import { navNodes } from '../src/data/navNodes';
 import {
   CAT_IDLE_BEFORE_SITTING_SECONDS,
   CAT_INITIAL_SEATED_SECONDS,
+  CAT_MAX_POSTURE_STEP,
   CAT_SIT_DOWN_SECONDS,
   CAT_STAND_UP_SECONDS,
   createCatPostureState,
+  getCatPostureRotation,
+  getCatSitBlend,
   isCatStanding,
   updateCatPosture,
   type CatPostureState,
@@ -16,6 +19,19 @@ import {
   calculateFollowCameraFraming,
   FOLLOW_CAMERA_DISTANCE,
 } from '../src/scene/followCamera';
+import {
+  CAT_COAT_STORAGE_KEY,
+  nextCatCoat,
+  readCatCoat,
+  recolorCatCoatPixels,
+  writeCatCoat,
+} from '../src/scene/catCoat';
+import {
+  CAT_MAX_FRAME_DELTA,
+  clampCatFrameDelta,
+  updateCatLocomotion,
+  type CatLocomotionState,
+} from '../src/scene/catMotion';
 
 const routes = ['/', '/about', '/writing', '/contact', '/missing-route'];
 
@@ -98,6 +114,71 @@ test('Goodreads is an external shelf destination excluded from the header menu',
   });
 });
 
+test('cat coat toggles deterministically and persists valid presets', () => {
+  const values = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => values.set(key, value),
+  };
+
+  expect(nextCatCoat('light-orange')).toBe('buff');
+  expect(nextCatCoat('buff')).toBe('light-orange');
+  expect(readCatCoat(storage)).toBe('light-orange');
+
+  writeCatCoat(storage, 'buff');
+  expect(values.get(CAT_COAT_STORAGE_KEY)).toBe('buff');
+  expect(readCatCoat(storage)).toBe('buff');
+
+  values.set(CAT_COAT_STORAGE_KEY, 'blue');
+  expect(readCatCoat(storage)).toBe('light-orange');
+});
+
+test('cat coats map warm midtones to their requested colors and preserve details', () => {
+  const source = new Uint8ClampedArray([
+    204, 112, 51, 255,
+    235, 230, 220, 255,
+    20, 10, 5, 255,
+  ]);
+  const lightOrange = recolorCatCoatPixels(source, 'light-orange');
+  const buff = recolorCatCoatPixels(source, 'buff');
+
+  expect([...lightOrange.slice(0, 4)]).toEqual([255, 170, 51, 255]);
+  expect([...buff.slice(0, 4)]).toEqual([218, 160, 109, 255]);
+  expect([...lightOrange.slice(4, 8)]).toEqual([...source.slice(4, 8)]);
+  expect([...lightOrange.slice(8, 12)]).toEqual([...source.slice(8, 12)]);
+});
+
+test('cat locomotion damping remains stable across common frame rates', () => {
+  const simulate = (framesPerSecond: number) => {
+    const state: CatLocomotionState = { move: 0, speed: 0, turn: 0 };
+    for (let frame = 0; frame < framesPerSecond; frame += 1) {
+      updateCatLocomotion(state, 1, 0.7, 1 / framesPerSecond);
+    }
+    return state;
+  };
+
+  const at30Fps = simulate(30);
+  const at60Fps = simulate(60);
+  const at120Fps = simulate(120);
+
+  for (const state of [at30Fps, at120Fps]) {
+    expect(state.move).toBeCloseTo(at60Fps.move, 6);
+    expect(state.speed).toBeCloseTo(at60Fps.speed, 6);
+    expect(state.turn).toBeCloseTo(at60Fps.turn, 6);
+  }
+});
+
+test('cat motion caps long frames to prevent position and rotation jumps', () => {
+  const state: CatLocomotionState = { move: 0, speed: 0, turn: 0 };
+  const frameDelta = updateCatLocomotion(state, 1, 1, 1);
+
+  expect(clampCatFrameDelta(1)).toBe(CAT_MAX_FRAME_DELTA);
+  expect(frameDelta).toBe(CAT_MAX_FRAME_DELTA);
+  expect(state.move).toBeLessThan(0.3);
+  expect(state.turn).toBeLessThan(0.34);
+  expect(1.38 * state.move * frameDelta).toBeLessThan(0.021);
+});
+
 test('cat starts seated, rises on load, and sits after ten seconds without movement', () => {
   const posture = createCatPostureState();
 
@@ -147,6 +228,58 @@ test('movement smoothly reverses an in-progress sit transition', () => {
   updateCatPosture(posture, 0.02, true);
   expect(posture.phase).toBe('standingUp');
   expect(posture.sitAmount).toBe(partialSit);
+});
+
+test('sit and stand easing is deterministic across common frame rates', () => {
+  const simulateStandingUp = (framesPerSecond: number) => {
+    const posture: CatPostureState = {
+      phase: 'standingUp',
+      phaseElapsed: 0,
+      inactivity: 0,
+      initialRisePending: false,
+      sitAmount: 1,
+    };
+    const frames = Math.round((CAT_STAND_UP_SECONDS / 2) * framesPerSecond);
+    for (let frame = 0; frame < frames; frame += 1) {
+      updateCatPosture(posture, 1 / framesPerSecond, true);
+    }
+    return getCatSitBlend(posture.sitAmount);
+  };
+
+  const at30Fps = simulateStandingUp(30);
+  const at60Fps = simulateStandingUp(60);
+  const at120Fps = simulateStandingUp(120);
+
+  expect(at30Fps).toBeCloseTo(at60Fps, 6);
+  expect(at120Fps).toBeCloseTo(at60Fps, 6);
+});
+
+test('posture interpolation has stable endpoints and no overshoot', () => {
+  expect(getCatSitBlend(-1)).toBe(0);
+  expect(getCatSitBlend(0)).toBe(0);
+  expect(getCatSitBlend(1)).toBe(1);
+  expect(getCatSitBlend(2)).toBe(1);
+  expect(getCatSitBlend(1 / 60)).toBeLessThan(0.00005);
+  expect(1 - getCatSitBlend(59 / 60)).toBeLessThan(0.00005);
+
+  const halfway = getCatPostureRotation([0.2, -0.1, 0.4], [1, 0.5, -0.2], 0.5);
+  expect(halfway).toEqual([0.7, 0.15, 0.30000000000000004]);
+});
+
+test('sit and stand transitions cap stalled frames', () => {
+  const posture: CatPostureState = {
+    phase: 'standingUp',
+    phaseElapsed: 0,
+    inactivity: 0,
+    initialRisePending: false,
+    sitAmount: 1,
+  };
+
+  updateCatPosture(posture, 1, true);
+
+  expect(posture.phase).toBe('standingUp');
+  expect(posture.phaseElapsed).toBe(CAT_MAX_POSTURE_STEP);
+  expect(posture.sitAmount).toBeCloseTo(1 - CAT_MAX_POSTURE_STEP / CAT_STAND_UP_SECONDS, 8);
 });
 
 test('follow framing keeps the bottom viewport edge inside the room floor', () => {
