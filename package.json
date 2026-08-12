@@ -23,15 +23,15 @@
     "test:visual": "playwright test --project=chromium"
   },
   "dependencies": {
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.4.0",
-    "firebase": "^12.16.0",
-    "lucide-react": "^1.25.0",
+    "@react-three/drei": "^10.7.8",
+    "@react-three/fiber": "^9.7.0",
+    "firebase": "^12.17.1",
+    "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router-dom": "^7.18.1",
+    "react-router-dom": "^7.18.2",
     "three": "^0.185.1",
-    "web-vitals": "^6.0.0"
+    "web-vitals": "^6.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
