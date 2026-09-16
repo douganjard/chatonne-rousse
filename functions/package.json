@@ -12,7 +12,7 @@
     "test": "pnpm run build && node --test lib/spotify.test.js"
   },
   "dependencies": {
-    "firebase-functions": "6.6.0"
+    "firebase-functions": "7.3.2"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
