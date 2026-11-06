@@ -27,8 +27,11 @@ import {
   writeCatCoat,
 } from '../src/scene/catCoat';
 import {
+  CAT_IDLE_LEG_BLEND_FULL,
+  CAT_IDLE_LEG_BLEND_START,
   CAT_MAX_FRAME_DELTA,
   clampCatFrameDelta,
+  getCatIdleLegBlend,
   updateCatLocomotion,
   type CatLocomotionState,
 } from '../src/scene/catMotion';
@@ -168,6 +171,16 @@ test('cat locomotion damping remains stable across common frame rates', () => {
   }
 });
 
+test('idle leg settling blends smoothly from the walking gait to the standing pose', () => {
+  expect(getCatIdleLegBlend(CAT_IDLE_LEG_BLEND_START)).toBe(0);
+  expect(getCatIdleLegBlend(CAT_IDLE_LEG_BLEND_FULL)).toBe(1);
+  expect(getCatIdleLegBlend(1)).toBe(0);
+  expect(getCatIdleLegBlend(0)).toBe(1);
+
+  const halfwayGait = (CAT_IDLE_LEG_BLEND_START + CAT_IDLE_LEG_BLEND_FULL) / 2;
+  expect(getCatIdleLegBlend(halfwayGait)).toBeCloseTo(0.5, 8);
+});
+
 test('cat motion caps long frames to prevent position and rotation jumps', () => {
   const state: CatLocomotionState = { move: 0, speed: 0, turn: 0 };
   const frameDelta = updateCatLocomotion(state, 1, 1, 1);
@@ -179,7 +192,7 @@ test('cat motion caps long frames to prevent position and rotation jumps', () =>
   expect(1.38 * state.move * frameDelta).toBeLessThan(0.021);
 });
 
-test('cat starts seated, rises on load, and sits after ten seconds without movement', () => {
+test('cat starts seated, rises on load, and sits after five seconds without movement', () => {
   const posture = createCatPostureState();
 
   advancePosture(posture, CAT_INITIAL_SEATED_SECONDS - 0.02);
