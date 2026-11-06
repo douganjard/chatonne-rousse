@@ -59,7 +59,7 @@ Use this checklist before accepting changes to the interactive room scene. It is
 ## Controls And Accessibility
 
 - [ ] The cat starts seated, rises naturally after the initial scene load, and does not translate or turn until fully standing.
-- [ ] After 10 seconds without forward or turn input, the cat transitions into a seated pose.
+- [ ] After 5 seconds without forward or turn input, the cat transitions into a seated pose.
 - [ ] Forward or turn input while seated or sitting down makes the cat stand before movement resumes, without snapping between poses.
 - [ ] `W` and `ArrowUp` move the cat forward; `A`/`ArrowLeft` and `D`/`ArrowRight` turn the cat.
 - [ ] `S` and `ArrowDown` are handled consistently with the current forward-only movement model and do not scroll the page while interacting with the scene.
@@ -86,6 +86,7 @@ Use this checklist before accepting changes to the interactive room scene. It is
 - [ ] Both coat colors preserve the source texture's pale markings and dark facial details and remain readable against the room floor.
 - [ ] The selected cat coat persists after a refresh, while invalid stored values fall back to light orange.
 - [ ] Walking and turning keep a continuous gait without leg shaking, alternating bone offsets, or visible position jumps after a slow frame.
+- [ ] Releasing movement naturally settles all four legs into the calibrated straight standing pose, with matching rear-paw orientations and floor contact, before the cat sits.
 - [ ] Sitting and standing use continuous eased motion without bone shaking, endpoint snaps, or a frozen walk pose bleeding into the seated pose.
 - [ ] Window materials keep warm emissive/translucent qualities without washing out adjacent objects.
 - [ ] Texture changes do not create severe aliasing, flicker, or repeating seams visible from the default camera.

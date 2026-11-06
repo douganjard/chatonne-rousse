@@ -37,6 +37,8 @@ Use `VISUAL_QA_URL=http://127.0.0.1:5173/ node scripts/visual-qa.mjs` if the app
 
 ## Browser Setup
 
+For cat standing-pose changes, run `pnpm exec playwright test tests/cat-standing.spec.ts --workers=1`. This uses the normal Vite test server and checks desktop and mobile against the actual skinned cat: vertical leg chains, matching rear-paw orientations, floor clearance, and sitting/standing transitions. Each run saves `cat-standing.png` in its Playwright test-output directory. The test-only helper uses Fiber's root registry to control frame timing; revisit that helper when upgrading Fiber.
+
 Use the in-app browser skill or another Playwright-backed browser session. Keep DevTools console and network inspection available while capturing screenshots.
 
 Required viewports:

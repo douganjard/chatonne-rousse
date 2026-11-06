@@ -66,6 +66,8 @@ Bounds are unscaled model-space bounds measured from the current `.glb` files. V
 
 The GLB also includes `thighBL_03`, `thighBR_026`, and foot IK helper objects (`footFIKL_031`, `footBIKL_032`, `footFIKR_033`, `footBIKR_034`). The seated pose rotates the torso and spine upward, straightens the foreleg chains against the chest, and folds the rear thigh, hock, and paw chains directly; the runtime does not drive the IK helpers.
 
+`CAT_STANDING_LEG_ROTATIONS` contains calibrated local XYZ Euler rotations in radians for this GLB, rather than the asymmetric source walk pose. Leg segments were aligned to world-down through their parent transforms. The right rear paw target mirrors the left paw's world orientation across the model's left/right plane, then converts back through the right lower leg's inverse world rotation. Recalibrate these targets if the asset changes; copying the left paw's local angles directly is not equivalent. `CAT_STANDING_GROUND_CLEARANCE` is a small model-specific height adjustment for the corrected stance and thin rug.
+
 ## Intended furniture positions
 
 | Furniture | Group position | Model/decor placements | Collision rect |

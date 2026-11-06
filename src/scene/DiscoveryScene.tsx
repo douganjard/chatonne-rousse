@@ -6,7 +6,7 @@ import type { NavNode } from '../data/navNodes';
 import { trackEvent } from '../lib/telemetry';
 import { SceneModel, TOON_CAT_URL } from './SceneModel';
 import { recolorCatCoatPixels, type CatCoat } from './catCoat';
-import { clampCatFrameDelta, updateCatLocomotion } from './catMotion';
+import { CAT_IDLE_LEG_BLEND_FULL, clampCatFrameDelta, getCatIdleLegBlend, updateCatLocomotion } from './catMotion';
 import { CAT_ROOM_LIMIT, CAT_START, resolveBlockedMove } from './collisions';
 import {
   calculateFollowCameraFraming,
@@ -56,6 +56,11 @@ type CatBonePose = {
   rotation: THREE.Euler;
 };
 
+type CatStandingBonePose = {
+  object: THREE.Object3D;
+  quaternion: THREE.Quaternion;
+};
+
 type CatPostureBonePose = CatBonePose & {
   offset: [number, number, number];
 };
@@ -98,6 +103,29 @@ const CAT_SIT_BONE_OFFSETS = {
   leglowerFR_00: [0.37, 0, 0],
   footFR_025: [0.37, 0, 0],
 } satisfies Record<string, [number, number, number]>;
+
+// Local XYZ Euler rotations in radians, calibrated for toon_cat_free.glb's hierarchy.
+// These straighten the leg chains while keeping the rear paws mirrored and floor-facing.
+const CAT_STANDING_LEG_ROTATIONS: Record<string, [number, number, number]> = {
+  thighBL_03: [1.71336, 0.03046, 0],
+  legupperBL_04: [0, -0.04969, 0],
+  leglowerBL_05: [0, -0.00184, 0],
+  footBL_06: [-1.47571, 0.00199, 0.02097],
+  thighBR_026: [1.71336, -0.04713, 0],
+  legupperBR_027: [0, 0.07669, 0],
+  leglowerBR_028: [0, 0.01115, 0],
+  // Mirror the left paw in world space, then convert through the right leg's parent.
+  footBR_029: [-1.47577, -0.00385, -0.04052],
+  legupperFL_014: [1.65028, -0.02, 0.00007],
+  leglowerFL_015: [0, 0.00342, 0],
+  footFL_016: [-1.35824, 0.00356, 0.01653],
+  legupperFR_024: [1.65028, -0.00163, 0.00007],
+  leglowerFR_00: [0, -0.01126, 0],
+  footFR_025: [-1.35823, 0.00278, 0.01292],
+};
+
+// Small clearance for the straight stance and the room's thin rug.
+const CAT_STANDING_GROUND_CLEARANCE = 0.025;
 
 const DESTINATION_SPARKLE_SETTINGS = {
   about: { center: [0, 0.04, 0.04], initialDelay: 1.2, plane: 'wall', radius: 0.12 },
@@ -1420,6 +1448,7 @@ function Cat({
   const action = useMemo(() => actions.Scene ?? Object.values(actions)[0], [actions]);
   const root = useRef<THREE.Group>(null);
   const tailBones = useRef<CatBonePose[]>([]);
+  const standingLegBones = useRef<CatStandingBonePose[]>([]);
   const postureBones = useRef<CatPostureBonePose[]>([]);
   const headBone = useRef<CatBonePose | null>(null);
   const earBones = useRef<CatBonePose[]>([]);
@@ -1475,10 +1504,37 @@ function Cat({
         rotation: object.rotation.clone(),
       }));
 
+    standingLegBones.current = Object.entries(CAT_STANDING_LEG_ROTATIONS)
+      .map(([name, target]) => {
+        const object = model.getObjectByName(name);
+        if (!object) return null;
+
+        return {
+          object,
+          quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(...target)),
+        };
+      })
+      .filter((pose): pose is CatStandingBonePose => Boolean(pose));
+
     postureBones.current = Object.entries(CAT_SIT_BONE_OFFSETS)
       .map(([name, offset]) => {
         const object = model.getObjectByName(name);
         if (!object) return null;
+        const bindRotation = object.rotation.clone();
+        const standingTarget = CAT_STANDING_LEG_ROTATIONS[name];
+
+        if (standingTarget) {
+          const rotation = new THREE.Euler(...standingTarget);
+          return {
+            object,
+            offset: [
+              bindRotation.x + offset[0] - rotation.x,
+              bindRotation.y + offset[1] - rotation.y,
+              bindRotation.z + offset[2] - rotation.z,
+            ] as [number, number, number],
+            rotation,
+          };
+        }
 
         return {
           object,
@@ -1569,9 +1625,11 @@ function Cat({
     const turnAmount = Math.abs(turn);
     const gaitAmount = Math.max(walk, turnAmount * 0.58);
     const idleAmount = 1 - THREE.MathUtils.clamp(gaitAmount * 1.8, 0, 1);
+    const idleBlend = getCatIdleLegBlend(gaitAmount);
+    const idleLegBlend = posture.phase === 'standing' ? idleBlend : 0;
 
     if (action) {
-      const gaitActive = posture.phase === 'standing' && gaitAmount > 0.025;
+      const gaitActive = posture.phase === 'standing' && gaitAmount > CAT_IDLE_LEG_BLEND_FULL;
       const targetTimeScale = gaitActive ? 0.48 + walk * 0.92 + turnAmount * 0.38 : 0;
       const targetWeight = gaitActive ? 1 : 0;
       action.enabled = true;
@@ -1584,12 +1642,17 @@ function Cat({
       const breath = Math.sin(clock.elapsedTime * 1.45) * idleAmount;
       root.current.rotation.z = THREE.MathUtils.damp(root.current.rotation.z, -turn * 0.09, 8, frameDelta);
       root.current.rotation.x = THREE.MathUtils.damp(root.current.rotation.x, walk * 0.04 + turnAmount * 0.012, 8, frameDelta);
-      root.current.position.y = -0.31 - sitAmount * 0.2 + breath * 0.005;
+      const stanceLift = CAT_STANDING_GROUND_CLEARANCE * idleBlend * (1 - sitAmount);
+      root.current.position.y = -0.31 - sitAmount * 0.2 + breath * 0.005 + stanceLift;
       root.current.scale.setScalar(0.0019 * (1 + breath * 0.006));
     }
 
-    // The source animation exclusively owns leg rotations. Layering Euler offsets here
-    // causes the mixer and procedural gait to overwrite one another on alternating frames.
+    if (idleLegBlend > 0) {
+      // The mixer supplies a fresh pose each frame; blend it absolutely to avoid drift.
+      standingLegBones.current.forEach(({ object, quaternion }) => {
+        object.quaternion.slerp(quaternion, idleLegBlend);
+      });
+    }
 
     if (postureOwnsBones) {
       postureBones.current.forEach(({ object, offset, rotation }) => {

@@ -9,7 +9,7 @@ export type CatPostureState = {
 };
 
 export const CAT_INITIAL_SEATED_SECONDS = 0.7;
-export const CAT_IDLE_BEFORE_SITTING_SECONDS = 10;
+export const CAT_IDLE_BEFORE_SITTING_SECONDS = 5;
 export const CAT_SIT_DOWN_SECONDS = 0.72;
 export const CAT_STAND_UP_SECONDS = 0.66;
 export const CAT_MAX_POSTURE_STEP = 1 / 20;
